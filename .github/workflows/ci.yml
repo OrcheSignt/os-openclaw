@@ -25,7 +25,7 @@ env:
 jobs:
   setup:
     name: Setup
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       repository_prefix: ${{ steps.config.outputs.repository_prefix }}
       should_deploy_dev: ${{ steps.config.outputs.should_deploy_dev }}
@@ -99,7 +99,7 @@ jobs:
     name: Deploy to Dev
     needs: [setup, build]
     if: needs.setup.outputs.should_deploy_dev == 'true'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout devops platform
         uses: actions/checkout@v6
@@ -139,7 +139,7 @@ jobs:
     name: Deploy to Prod
     needs: [setup, build]
     if: needs.setup.outputs.should_deploy_prod == 'true'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout devops platform
         uses: actions/checkout@v6
