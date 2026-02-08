@@ -1,0 +1,139 @@
+name: CI - Docker Build & Deploy
+
+on:
+  push:
+    branches: [dev, prod]
+  workflow_dispatch:
+    inputs:
+      deploy_dev:
+        description: 'Deploy to dev environment'
+        type: boolean
+        default: false
+      deploy_prod:
+        description: 'Deploy to prod environment'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ACR_REGISTRY: acrdevorchsight.azurecr.io
+  RELEASE_NAME: openclaw-service
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      repository_prefix: ${{ steps.config.outputs.repository_prefix }}
+      should_deploy_dev: ${{ steps.config.outputs.should_deploy_dev }}
+      should_deploy_prod: ${{ steps.config.outputs.should_deploy_prod }}
+    steps:
+      - name: Determine configuration
+        id: config
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          case "$BRANCH" in
+            dev)  PREFIX="dev/";  DEPLOY_DEV="true";  DEPLOY_PROD="false" ;;
+            prod) PREFIX="prod/"; DEPLOY_DEV="false"; DEPLOY_PROD="true" ;;
+            *)    PREFIX="dev/";  DEPLOY_DEV="false"; DEPLOY_PROD="false" ;;
+          esac
+          if [ "${{ inputs.deploy_dev }}" == "true" ]; then DEPLOY_DEV="true"; fi
+          if [ "${{ inputs.deploy_prod }}" == "true" ]; then DEPLOY_PROD="true"; fi
+          echo "repository_prefix=${PREFIX}" >> $GITHUB_OUTPUT
+          echo "should_deploy_dev=${DEPLOY_DEV}" >> $GITHUB_OUTPUT
+          echo "should_deploy_prod=${DEPLOY_PROD}" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build Docker Image
+    needs: setup
+    uses: OrcheSignt/orchsight-devops-cloud-platform/.github/workflows/_reusable-docker-build.yml@main
+    with:
+      release_name: openclaw-service
+      dockerfile_path: .docker/Dockerfile
+      repository_prefix: ${{ needs.setup.outputs.repository_prefix }}
+    secrets:
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+
+  deploy-dev:
+    name: Deploy to Dev
+    needs: [setup, build]
+    if: needs.setup.outputs.should_deploy_dev == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout devops platform
+        uses: actions/checkout@v6
+        with:
+          repository: OrcheSignt/orchsight-devops-cloud-platform
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+          ref: main
+
+      - name: Update ArgoCD values
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod a+x /usr/local/bin/yq
+          FOLDER="argocd/apps-values/environments/dev/${{ env.RELEASE_NAME }}"
+          mkdir -p "$FOLDER"
+          [ -f "$FOLDER/values.yaml" ] || touch "$FOLDER/values.yaml"
+          yq -i '.environment = "dev"' "$FOLDER/values.yaml"
+          yq -i '.image.tag = "${{ needs.build.outputs.image_tag }}"' "$FOLDER/values.yaml"
+          yq -i '.image.repository = "${{ env.ACR_REGISTRY }}/${{ needs.setup.outputs.repository_prefix }}${{ env.RELEASE_NAME }}"' "$FOLDER/values.yaml"
+          cat "$FOLDER/values.yaml"
+
+      - name: Push changes
+        run: |
+          git config user.email "pipeline@orchsight.com"
+          git config user.name "GitHub Actions"
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "Update ${{ env.RELEASE_NAME }} to ${{ needs.build.outputs.image_tag }}"
+            for i in 1 2 3; do
+              git push && break
+              echo "Push failed (attempt $i), pulling and retrying..."
+              git pull --rebase
+              sleep $((i * 2))
+            done
+          fi
+
+  deploy-prod:
+    name: Deploy to Prod
+    needs: [setup, build]
+    if: needs.setup.outputs.should_deploy_prod == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout devops platform
+        uses: actions/checkout@v6
+        with:
+          repository: OrcheSignt/orchsight-devops-cloud-platform
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+          ref: main
+
+      - name: Update ArgoCD values
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod a+x /usr/local/bin/yq
+          FOLDER="argocd/apps-values/environments/prod/${{ env.RELEASE_NAME }}"
+          mkdir -p "$FOLDER"
+          [ -f "$FOLDER/values.yaml" ] || touch "$FOLDER/values.yaml"
+          yq -i '.environment = "prod"' "$FOLDER/values.yaml"
+          yq -i '.image.tag = "${{ needs.build.outputs.image_tag }}"' "$FOLDER/values.yaml"
+          yq -i '.image.repository = "${{ env.ACR_REGISTRY }}/${{ needs.setup.outputs.repository_prefix }}${{ env.RELEASE_NAME }}"' "$FOLDER/values.yaml"
+          cat "$FOLDER/values.yaml"
+
+      - name: Push changes
+        run: |
+          git config user.email "pipeline@orchsight.com"
+          git config user.name "GitHub Actions"
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "Update ${{ env.RELEASE_NAME }} to ${{ needs.build.outputs.image_tag }}"
+            for i in 1 2 3; do
+              git push && break
+              echo "Push failed (attempt $i), pulling and retrying..."
+              git pull --rebase
+              sleep $((i * 2))
+            done
+          fi
