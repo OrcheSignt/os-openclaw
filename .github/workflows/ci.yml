@@ -20,7 +20,7 @@ concurrency:
 
 env:
   ACR_REGISTRY: acrdevorchsight.azurecr.io
-  RELEASE_NAME: openclaw-service
+  RELEASE_NAME: os-openclaw
 
 jobs:
   setup:
@@ -51,7 +51,7 @@ jobs:
     needs: setup
     uses: OrcheSignt/orchsight-devops-cloud-platform/.github/workflows/_reusable-docker-build.yml@main
     with:
-      release_name: openclaw-service
+      release_name: os-openclaw
       dockerfile_path: .docker/Dockerfile
       repository_prefix: ${{ needs.setup.outputs.repository_prefix }}
     secrets:
