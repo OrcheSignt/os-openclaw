@@ -7,5 +7,29 @@
       "mode": "token",
       "token": "orchsight-openclaw-internal-2026"
     }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "vllm/qwen_llm"
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "vllm": {
+        "baseUrl": "http://vllm-server.prod.svc.cluster.local:8000/v1",
+        "apiKey": "none",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "qwen_llm",
+            "name": "Qwen3-14B",
+            "contextWindow": 16384,
+            "maxTokens": 4096
+          }
+        ]
+      }
+    }
   }
 }
