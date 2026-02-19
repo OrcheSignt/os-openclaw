@@ -14,34 +14,51 @@
         "primary": "vllm/qwen_llm"
       }
     },
-    "ediscovery": {
-      "workspace": "workspaces/ediscovery",
-      "toolPolicy": [
-        "search_evidence", "get_item_details", "tag_items", "bulk_tag",
-        "aggregate_data", "analyze_text", "create_notification",
-        "create_task", "log_audit", "update_case_progress", "generate_report"
-      ]
-    },
-    "privacy": {
-      "workspace": "workspaces/privacy",
-      "toolPolicy": [
-        "search_evidence", "get_item_details", "tag_items", "bulk_tag",
-        "analyze_text", "create_notification", "create_task",
-        "log_audit", "generate_report"
-      ]
-    },
-    "cyber": {
-      "workspace": "workspaces/cyber",
-      "toolPolicy": "*"
-    },
-    "compliance": {
-      "workspace": "workspaces/compliance",
-      "toolPolicy": [
-        "search_evidence", "aggregate_data", "get_item_details",
-        "create_notification", "create_task", "log_audit",
-        "update_case_progress", "generate_report"
-      ]
-    }
+    "list": [
+      {
+        "id": "ediscovery",
+        "workspace": "workspaces/ediscovery",
+        "tools": {
+          "profile": "full",
+          "allow": [
+            "search_evidence", "get_item_details", "tag_items", "bulk_tag",
+            "aggregate_data", "analyze_text", "create_notification",
+            "create_task", "log_audit", "update_case_progress", "generate_report"
+          ]
+        }
+      },
+      {
+        "id": "privacy",
+        "workspace": "workspaces/privacy",
+        "tools": {
+          "profile": "full",
+          "allow": [
+            "search_evidence", "get_item_details", "tag_items", "bulk_tag",
+            "analyze_text", "create_notification", "create_task",
+            "log_audit", "generate_report"
+          ]
+        }
+      },
+      {
+        "id": "cyber",
+        "workspace": "workspaces/cyber",
+        "tools": {
+          "profile": "full"
+        }
+      },
+      {
+        "id": "compliance",
+        "workspace": "workspaces/compliance",
+        "tools": {
+          "profile": "full",
+          "allow": [
+            "search_evidence", "aggregate_data", "get_item_details",
+            "create_notification", "create_task", "log_audit",
+            "update_case_progress", "generate_report"
+          ]
+        }
+      }
+    ]
   },
   "models": {
     "providers": {
@@ -60,22 +77,26 @@
       }
     }
   },
-  "mcpServers": {
-    "orchesight": {
-      "transport": "streamable-http",
-      "url": "http://os-openclaw-mcp-app/mcp"
+  "plugins": {
+    "entries": {
+      "mcp-integration": {
+        "enabled": true,
+        "config": {
+          "enabled": true,
+          "servers": {
+            "orchesight": {
+              "enabled": true,
+              "transport": "http",
+              "url": "http://os-openclaw-mcp-app:3020/mcp"
+            }
+          }
+        }
+      }
     }
   },
-  "schedules": {
-    "compliance_scan": {
-      "agent": "compliance",
-      "cron": "0 6 * * *",
-      "description": "Daily compliance scan at 06:00 UTC"
-    },
-    "privacy_scan": {
-      "agent": "privacy",
-      "cron": "0 2 * * *",
-      "description": "Daily PII detection scan at 02:00 UTC"
-    }
+  "cron": {
+    "enabled": true,
+    "maxConcurrentRuns": 2,
+    "sessionRetention": "24h"
   }
 }
