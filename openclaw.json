@@ -77,23 +77,6 @@
       }
     }
   },
-  "plugins": {
-    "entries": {
-      "mcp-integration": {
-        "enabled": true,
-        "config": {
-          "enabled": true,
-          "servers": {
-            "orchesight": {
-              "enabled": true,
-              "transport": "http",
-              "url": "http://os-openclaw-mcp-app:3020/mcp"
-            }
-          }
-        }
-      }
-    }
-  },
   "cron": {
     "enabled": true,
     "maxConcurrentRuns": 2,
