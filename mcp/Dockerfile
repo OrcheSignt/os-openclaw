@@ -30,4 +30,4 @@ RUN mkdir -p logs && chown -R nodejs:nodejs logs
 EXPOSE 3020
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "dist/src/main.js"]
+CMD ["node", "dist/main.js"]

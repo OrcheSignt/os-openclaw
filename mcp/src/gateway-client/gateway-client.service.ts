@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import type { AxiosRequestConfig, AxiosError } from 'axios';
+import * as jwt from 'jsonwebtoken';
 
 export interface GatewayRequestOptions {
   timeout?: number;
@@ -20,7 +21,7 @@ export interface GatewayError {
 export class GatewayClientService {
   private readonly logger = new Logger(GatewayClientService.name);
   private readonly baseUrl: string;
-  private readonly apiKey: string;
+  private readonly jwtSecret: string;
   private readonly agentUserId: string;
   private readonly agentUserEmail: string;
 
@@ -32,11 +33,19 @@ export class GatewayClientService {
       'OS_API_GATEWAY_URL',
       'http://os-api-gateway-app/api/v1',
     );
-    this.apiKey = this.configService.get<string>('OS_API_GATEWAY_KEY', '');
+    this.jwtSecret = this.configService.get<string>('JWT_SECRET', '');
     this.agentUserId = this.configService.get<string>('AGENT_USER_ID', '');
     this.agentUserEmail = this.configService.get<string>(
       'AGENT_USER_EMAIL',
       'openclaw-agent@orchesight.internal',
+    );
+  }
+
+  private generateToken(): string {
+    return jwt.sign(
+      { sub: this.agentUserId, email: this.agentUserEmail },
+      this.jwtSecret,
+      { expiresIn: '1h' },
     );
   }
 
@@ -57,7 +66,7 @@ export class GatewayClientService {
       timeout: options?.timeout || 30000,
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': this.apiKey,
+        'Authorization': `Bearer ${this.generateToken()}`,
         'X-User-Id': this.agentUserId,
         'X-User-Email': this.agentUserEmail,
       },
@@ -116,7 +125,13 @@ export class GatewayClientService {
 
   async checkHealth(): Promise<boolean> {
     try {
-      await this.get('investigation', '/health');
+      const url = `${this.baseUrl}/health`;
+      const config: AxiosRequestConfig = {
+        method: 'GET',
+        url,
+        timeout: 5000,
+      };
+      await firstValueFrom(this.httpService.request(config));
       return true;
     } catch {
       return false;
