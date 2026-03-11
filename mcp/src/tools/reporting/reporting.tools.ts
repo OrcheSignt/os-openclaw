@@ -23,6 +23,9 @@ export class ReportingTools {
           'pois-report',
           'timeline-report',
           'communications-report',
+          'investigation-summary',
+          'legal-analysis',
+          'expert-opinion',
         ])
         .describe('Type of report to generate'),
       filters: z

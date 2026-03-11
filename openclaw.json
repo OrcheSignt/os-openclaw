@@ -11,7 +11,7 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "vllm/qwen_llm"
+        "primary": "vllm/gpt_oss"
       }
     },
     "list": [
@@ -57,6 +57,20 @@
             "update_case_progress", "generate_report"
           ]
         }
+      },
+      {
+        "id": "recommendations",
+        "workspace": "workspaces/recommendations",
+        "tools": {
+          "profile": "full",
+          "allow": [
+            "search_evidence", "get_item_details", "aggregate_data",
+            "analyze_text", "build_timeline", "cross_reference",
+            "search_communications", "search_by_entity",
+            "get_legal_references", "save_case_recommendation",
+            "create_notification", "log_audit"
+          ]
+        }
       }
     ]
   },
@@ -68,10 +82,10 @@
         "api": "openai-completions",
         "models": [
           {
-            "id": "qwen_llm",
-            "name": "Qwen3-14B",
-            "contextWindow": 16384,
-            "maxTokens": 4096
+            "id": "gpt_oss",
+            "name": "Qwen3.5-9B",
+            "contextWindow": 131072,
+            "maxTokens": 16384
           }
         ]
       }

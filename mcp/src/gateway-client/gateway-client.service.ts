@@ -51,7 +51,7 @@ export class GatewayClientService {
 
   async request<T>(
     service: string,
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     data?: any,
     options?: GatewayRequestOptions,
@@ -112,6 +112,15 @@ export class GatewayClientService {
     options?: GatewayRequestOptions,
   ): Promise<T> {
     return this.request<T>(service, 'POST', path, data, options);
+  }
+
+  async put<T>(
+    service: string,
+    path: string,
+    data?: any,
+    options?: GatewayRequestOptions,
+  ): Promise<T> {
+    return this.request<T>(service, 'PUT', path, data, options);
   }
 
   async patch<T>(

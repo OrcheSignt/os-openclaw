@@ -8,6 +8,7 @@ import { ManagementToolsModule } from './tools/management/management-tools.modul
 import { MlToolsModule } from './tools/ml/ml-tools.module.js';
 import { ReportingToolsModule } from './tools/reporting/reporting-tools.module.js';
 import { PipelineToolsModule } from './tools/pipeline/pipeline-tools.module.js';
+import { RecommendationsToolsModule } from './tools/recommendations/recommendations-tools.module.js';
 import { HealthModule } from './health/health.module.js';
 
 @Module({
@@ -26,6 +27,7 @@ import { HealthModule } from './health/health.module.js';
     MlToolsModule,
     ReportingToolsModule,
     PipelineToolsModule,
+    RecommendationsToolsModule,
     HealthModule,
   ],
 })
