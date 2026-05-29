@@ -36,6 +36,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
+          build-mode: none
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
