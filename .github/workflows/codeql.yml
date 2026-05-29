@@ -31,6 +31,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Self-hosted runners don't ship a recent Node; CodeQL's bundled
+      # autobuild.sh shells out to system 'node' to parse JS/TS, which
+      # fails on optional chaining '?.' if Node < 14. Pin Node 20.
+      - name: Setup Node
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
