@@ -3,6 +3,11 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
 
 @Injectable()
 export class ManagementTools {
@@ -45,7 +50,11 @@ export class ManagementTools {
       caseId?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'create_notification');
+
     const result = await this.gateway.post<any>(
       'project',
       '/notifications',
@@ -78,7 +87,6 @@ export class ManagementTools {
       'follow-up actions, or compliance checks to team members.',
     parameters: z.object({
       title: z.string().max(300).describe('Task title'),
-      organizationId: z.string().describe('Organization ID'),
       caseId: z.string().optional().describe('Related case ID'),
       assignedToList: z
         .array(z.string())
@@ -106,7 +114,6 @@ export class ManagementTools {
   async createTask(
     params: {
       title: string;
-      organizationId: string;
       caseId?: string;
       assignedToList?: string[];
       priority: string;
@@ -115,10 +122,14 @@ export class ManagementTools {
       tags?: string[];
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'create_task');
+
     const result = await this.gateway.post<any>('project', '/tasks', {
       title: params.title,
-      organizationId: params.organizationId,
+      organizationId: agent.organizationId,
       caseId: params.caseId,
       assignedToList: params.assignedToList,
       priority: params.priority,
@@ -141,7 +152,7 @@ export class ManagementTools {
   @Tool({
     name: 'update_task',
     description:
-      'Update an existing task — change status, progress, or add a comment. ' +
+      'Update an existing task -- change status, progress, or add a comment. ' +
       'Use to track work progress on review tasks.',
     parameters: z.object({
       taskId: z.string().describe('Task ID to update'),
@@ -170,7 +181,11 @@ export class ManagementTools {
       comment?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'update_task');
+
     const updates: string[] = [];
 
     if (params.status || params.progress !== undefined) {
@@ -183,9 +198,9 @@ export class ManagementTools {
         `/tasks/${params.taskId}`,
         patchData,
       );
-      if (params.status) updates.push(`status → ${params.status}`);
+      if (params.status) updates.push(`status -> ${params.status}`);
       if (params.progress !== undefined)
-        updates.push(`progress → ${params.progress}%`);
+        updates.push(`progress -> ${params.progress}%`);
     }
 
     if (params.comment) {
@@ -227,7 +242,11 @@ export class ManagementTools {
   async updateCaseProgress(
     params: { caseId: string; progress: number },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'update_case_progress');
+
     await this.gateway.patch<any>(
       'project',
       `/cases/${params.caseId}/progress`,
@@ -295,7 +314,11 @@ export class ManagementTools {
       details?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'log_audit');
+
     await this.gateway.post<any>('project', '/audit-logs', {
       action: params.action,
       resourceType: params.resourceType,
@@ -304,6 +327,7 @@ export class ManagementTools {
       category: params.category,
       compliance: params.compliance,
       details: params.details,
+      organizationId: agent.organizationId,
       source: 'openclaw-agent',
       timestamp: new Date().toISOString(),
     });

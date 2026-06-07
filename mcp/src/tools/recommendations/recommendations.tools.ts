@@ -3,6 +3,11 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
 
 @Injectable()
 export class RecommendationsTools {
@@ -17,7 +22,6 @@ export class RecommendationsTools {
       'Creates or updates the recommendation for the given case and type.',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
-      organizationId: z.string().describe('The organization ID'),
       type: z
         .enum(['case_summary', 'legal_challenges', 'relevant_law'])
         .describe('Recommendation type'),
@@ -44,7 +48,6 @@ export class RecommendationsTools {
   async saveCaseRecommendation(
     params: {
       caseId: string;
-      organizationId: string;
       type: string;
       content: string;
       structured?: Record<string, any>;
@@ -52,13 +55,17 @@ export class RecommendationsTools {
       evidenceItemIds?: string[];
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'save_case_recommendation');
+
     try {
       const result = await this.gateway.put<any>(
         'investigation',
         `/case-recommendations/${params.caseId}/${params.type}`,
         {
-          organizationId: params.organizationId,
+          organizationId: agent.organizationId,
           content: params.content,
           structured: params.structured,
           jurisdiction: params.jurisdiction,
@@ -110,7 +117,11 @@ export class RecommendationsTools {
       case_type?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'get_legal_references');
+
     try {
       const queryParams = new URLSearchParams({
         jurisdiction: params.jurisdiction,
