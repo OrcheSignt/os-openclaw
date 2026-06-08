@@ -1,2 +1,14 @@
 # Claude Code local settings
 .claude/
+
+# Node build artifacts — mcp/ is a TypeScript Node app whose Dockerfile
+# runs `npm install` and `npm run build` from source. None of these
+# should ever be committed.
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Logs / OS noise
+*.log
+.DS_Store
+Thumbs.db
