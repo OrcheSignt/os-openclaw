@@ -3,6 +3,11 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
 
 @Injectable()
 export class PipelineTools {
@@ -22,7 +27,11 @@ export class PipelineTools {
   async getPipelineStatus(
     params: { pipelineId: string },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'get_pipeline_status');
+
     try {
       const result = await this.gateway.get<any>(
         'process',
@@ -88,7 +97,11 @@ export class PipelineTools {
       options?: Record<string, any>;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'trigger_enrichment');
+
     try {
       const result = await this.gateway.post<any>(
         'process',

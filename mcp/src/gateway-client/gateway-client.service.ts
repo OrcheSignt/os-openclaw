@@ -17,6 +17,10 @@ export interface GatewayError {
   message: string;
 }
 
+/** Minimum JWT_SECRET length we accept. Below this, HS256 brute force is
+ *  realistic. Aligns with OWASP guidance for HMAC secrets. */
+const MIN_JWT_SECRET_LENGTH = 32;
+
 @Injectable()
 export class GatewayClientService {
   private readonly logger = new Logger(GatewayClientService.name);
@@ -33,7 +37,20 @@ export class GatewayClientService {
       'OS_API_GATEWAY_URL',
       'http://os-api-gateway-app/api/v1',
     );
-    this.jwtSecret = this.configService.get<string>('JWT_SECRET', '');
+
+    // Fail closed at module init if JWT_SECRET is missing or too short.
+    // Previously this silently defaulted to '' which produced trivially
+    // forgeable tokens (security review finding C5).
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret || secret.length < MIN_JWT_SECRET_LENGTH) {
+      throw new Error(
+        `GatewayClientService: JWT_SECRET must be set and at least ` +
+          `${MIN_JWT_SECRET_LENGTH} characters long. ` +
+          `Refusing to sign service-to-service tokens with a weak key.`,
+      );
+    }
+    this.jwtSecret = secret;
+
     this.agentUserId = this.configService.get<string>('AGENT_USER_ID', '');
     this.agentUserEmail = this.configService.get<string>(
       'AGENT_USER_EMAIL',
@@ -89,7 +106,7 @@ export class GatewayClientService {
           'Unknown gateway error',
       };
       this.logger.error(
-        `Gateway error: ${gwError.service}${gwError.path} → ${gwError.status} ${gwError.message}`,
+        `Gateway error: ${gwError.service}${gwError.path} -> ${gwError.status} ${gwError.message}`,
       );
       throw new Error(
         `Gateway call failed (${gwError.service}${gwError.path}): ${gwError.status} ${gwError.message}`,

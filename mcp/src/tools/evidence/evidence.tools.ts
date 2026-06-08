@@ -3,6 +3,12 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  resolveOrganizationId,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
 
 @Injectable()
 export class EvidenceTools {
@@ -54,7 +60,11 @@ export class EvidenceTools {
       searchMode: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'search_evidence');
+
     const size = Math.min(params.size || 10, 50);
 
     const filters: any[] = [
@@ -112,7 +122,6 @@ export class EvidenceTools {
       'Tags are used for classification (e.g. "eDiscovery/Privileged", "Privacy/PII-High").',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
-      organizationId: z.string().describe('The organization ID'),
       tagName: z.string().describe('Tag name (e.g. "eDiscovery/Privileged")'),
       tagColor: z
         .string()
@@ -128,16 +137,19 @@ export class EvidenceTools {
   async tagItems(
     params: {
       caseId: string;
-      organizationId: string;
       tagName: string;
       tagColor?: string;
       itemIds: string[];
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'tag_items');
+
     const result = await this.gateway.post<any>('investigation', '/tags/apply', {
       caseId: params.caseId,
-      organizationId: params.organizationId,
+      organizationId: agent.organizationId,
       tagName: params.tagName,
       tagColor: params.tagColor || '#3B82F6',
       itemIds: params.itemIds,
@@ -160,7 +172,6 @@ export class EvidenceTools {
       'Uses server-side search-and-tag to handle pagination automatically.',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
-      organizationId: z.string().describe('The organization ID'),
       searchTerm: z.string().describe('Search query to match items'),
       searchMethod: z
         .enum(['keyword', 'semantic', 'hybrid'])
@@ -172,19 +183,22 @@ export class EvidenceTools {
   async bulkTag(
     params: {
       caseId: string;
-      organizationId: string;
       searchTerm: string;
       searchMethod: string;
       tagName: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'bulk_tag');
+
     const result = await this.gateway.post<any>(
       'investigation',
       '/tags/search-and-tag',
       {
         caseId: params.caseId,
-        organizationId: params.organizationId,
+        organizationId: agent.organizationId,
         searchTerm: params.searchTerm,
         searchMethod: params.searchMethod,
         tagName: params.tagName,
@@ -218,7 +232,11 @@ export class EvidenceTools {
   async getItemDetails(
     params: { caseId: string; itemIds: string[] },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'get_item_details');
+
     const itemIds = params.itemIds.slice(0, 50);
 
     const request = {
@@ -255,7 +273,7 @@ export class EvidenceTools {
   @Tool({
     name: 'aggregate_data',
     description:
-      'Run aggregations on evidence data — terms (top values), date_histogram (timeline), or stats (min/max/avg). ' +
+      'Run aggregations on evidence data -- terms (top values), date_histogram (timeline), or stats (min/max/avg). ' +
       'Useful for case overview, distribution analysis, and trend detection.',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
@@ -286,7 +304,11 @@ export class EvidenceTools {
       size: number;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'aggregate_data');
+
     const agg: any = {
       name: 'result',
       type: params.aggType,
@@ -420,3 +442,7 @@ export class EvidenceTools {
     return String(field);
   }
 }
+
+// Reference resolveOrganizationId so it remains tree-shake-safe as future
+// tool methods adopt the LLM-vs-pinned reconciliation pattern.
+void resolveOrganizationId;

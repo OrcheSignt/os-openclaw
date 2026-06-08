@@ -3,6 +3,11 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
 
 @Injectable()
 export class ReportingTools {
@@ -41,7 +46,11 @@ export class ReportingTools {
       filters?: Record<string, any>;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'generate_report');
+
     try {
       const result = await this.gateway.post<any>(
         'reporting',
@@ -102,7 +111,11 @@ export class ReportingTools {
       fields?: string[];
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'export_items');
+
     try {
       const result = await this.gateway.post<any>(
         'reporting',

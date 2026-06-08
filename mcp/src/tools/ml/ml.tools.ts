@@ -4,6 +4,11 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
 
 @Injectable()
 export class MlTools {
@@ -54,7 +59,11 @@ export class MlTools {
       targetLanguage?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'analyze_text');
+
     let text = params.text;
     if (text.length > 5000) {
       text = text.substring(0, 5000);
@@ -90,7 +99,7 @@ export class MlTools {
         content: [
           {
             type: 'text' as const,
-            text: `Error: ML analysis failed — ${error.message}`,
+            text: `Error: ML analysis failed -- ${error.message}`,
           },
         ],
       };
@@ -117,9 +126,12 @@ export class MlTools {
       analysisType: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'analyze_image');
+
     try {
-      // 1. Fetch item to get file path
       const searchResult = await this.gateway.post<any>(
         'investigation',
         '/search',
@@ -157,7 +169,6 @@ export class MlTools {
         };
       }
 
-      // 2. Call ML service
       const result = await this.gateway.post<any>(
         'ml',
         '/analyze/image',
@@ -175,7 +186,7 @@ export class MlTools {
         content: [
           {
             type: 'text' as const,
-            text: `Error: Image analysis failed — ${error.message}`,
+            text: `Error: Image analysis failed -- ${error.message}`,
           },
         ],
       };
@@ -318,10 +329,10 @@ export class MlTools {
       result?.translation ||
       result?.results?.[0]?.translated_text ||
       result?.text;
-    if (!translated) return 'Translation failed — no result returned.';
+    if (!translated) return 'Translation failed -- no result returned.';
     const sourceLang =
       result?.detected_language || result?.source_language || 'auto';
-    return `**Translation (${sourceLang} → target):**\n${translated}`;
+    return `**Translation (${sourceLang} -> target):**\n${translated}`;
   }
 
   private formatLanguageResult(result: any): string {
