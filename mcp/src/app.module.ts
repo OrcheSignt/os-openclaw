@@ -10,6 +10,7 @@ import { ReportingToolsModule } from './tools/reporting/reporting-tools.module.j
 import { PipelineToolsModule } from './tools/pipeline/pipeline-tools.module.js';
 import { RecommendationsToolsModule } from './tools/recommendations/recommendations-tools.module.js';
 import { HealthModule } from './health/health.module.js';
+import { PlannerModule } from './planner/planner.module.js';
 import { SecurityModule } from './security/security.module.js';
 import { McpAuthGuard } from './security/mcp-auth.guard.js';
 
@@ -35,6 +36,7 @@ import { McpAuthGuard } from './security/mcp-auth.guard.js';
     ReportingToolsModule,
     PipelineToolsModule,
     RecommendationsToolsModule,
+    PlannerModule,
     HealthModule,
   ],
 })

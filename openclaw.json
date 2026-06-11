@@ -5,7 +5,7 @@
     "port": 18789,
     "auth": {
       "mode": "token",
-      "token": "orchsight-openclaw-internal-2026"
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
     }
   },
   "agents": {
@@ -18,6 +18,9 @@
       {
         "id": "ediscovery",
         "workspace": "workspaces/ediscovery",
+        "model": {
+          "primary": "vllm/gpt_oss"
+        },
         "tools": {
           "profile": "full",
           "allow": [
@@ -43,7 +46,12 @@
         "id": "cyber",
         "workspace": "workspaces/cyber",
         "tools": {
-          "profile": "full"
+          "profile": "full",
+          "allow": [
+            "search_evidence", "get_item_details", "aggregate_data",
+            "analyze_text", "create_notification", "create_task",
+            "log_audit", "update_case_progress", "generate_report"
+          ]
         }
       },
       {

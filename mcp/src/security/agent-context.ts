@@ -1,12 +1,18 @@
 import { ForbiddenException } from '@nestjs/common';
 import type { AgentIdentity } from './agent-identity.service.js';
+import type { CaseContext } from './case-context.service.js';
 
 /**
  * Shape of the third argument that @rekog/mcp-nest passes to @Tool handlers.
- * It is the raw Express request augmented by McpAuthGuard.
+ * It is the raw Express request augmented by McpAuthGuard (openClawAgent)
+ * and, for case-scoped tool calls, by CaseContextService.requireCaseContext
+ * (caseContext).
  */
 export interface McpToolHttpRequest {
   openClawAgent?: AgentIdentity;
+  caseContext?: CaseContext;
+  /** Express request headers (present on the HTTP transport). */
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 /**

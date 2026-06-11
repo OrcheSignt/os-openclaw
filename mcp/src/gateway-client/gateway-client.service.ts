@@ -149,6 +149,62 @@ export class GatewayClientService {
     return this.request<T>(service, 'PATCH', path, data, options);
   }
 
+  // ---------------------------------------------------------------------------
+  // v2.0 foundation endpoints (os-investigation internal API)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * WS-2: fetch the assembled case context document in one round-trip.
+   * Backend contract: GET /internal/case-context/:caseId (WS-1).
+   * Callers (CaseContextService) own the org validation — this is transport only.
+   */
+  async getCaseContext<T = unknown>(caseId: string): Promise<T> {
+    return this.get<T>(
+      'investigation',
+      `/internal/case-context/${encodeURIComponent(caseId)}`,
+    );
+  }
+
+  /**
+   * WS-3: persist a validated agent plan to the `agent_plans` collection.
+   * POST /internal/agent-plans. Plans are case data: org- and agent-scoped.
+   */
+  async createAgentPlan<T = unknown>(
+    plan: Record<string, unknown>,
+    organizationId: string,
+    agentId: string,
+  ): Promise<T> {
+    return this.post<T>('investigation', '/internal/agent-plans', {
+      ...plan,
+      organizationId,
+      agentId,
+    });
+  }
+
+  /**
+   * WS-3: append a status transition (draft -> approved -> executing ->
+   * done | aborted). PATCH /internal/agent-plans/:planId/status.
+   */
+  async updateAgentPlanStatus<T = unknown>(
+    planId: string,
+    status: string,
+    by: string,
+  ): Promise<T> {
+    return this.patch<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}/status`,
+      { status, by },
+    );
+  }
+
+  /** WS-3: fetch a persisted plan. GET /internal/agent-plans/:planId. */
+  async getAgentPlan<T = unknown>(planId: string): Promise<T> {
+    return this.get<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}`,
+    );
+  }
+
   async checkHealth(): Promise<boolean> {
     try {
       const url = `${this.baseUrl}/health`;
