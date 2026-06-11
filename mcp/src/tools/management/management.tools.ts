@@ -297,6 +297,30 @@ export class ManagementTools {
         .max(2000)
         .optional()
         .describe('Additional details'),
+      // --- audit v2 (plan §8.3) — all optional, additive, so existing
+      // callers are unaffected ---
+      planId: z
+        .string()
+        .optional()
+        .describe('Agent plan id (plan DSL) this action belongs to'),
+      stepId: z
+        .string()
+        .optional()
+        .describe('Plan step id this action executed'),
+      provenance: z
+        .object({
+          itemIds: z.array(z.string()).optional(),
+          searchIds: z.array(z.string()).optional(),
+          auditIds: z.array(z.string()).optional(),
+        })
+        .optional()
+        .describe(
+          'Citation provenance: ids of the items/searches/audit records this action relied on',
+        ),
+      resultHash: z
+        .string()
+        .optional()
+        .describe('Hash of the action result, for tamper-evident audit'),
     }),
   })
   async logAudit(
@@ -312,12 +336,31 @@ export class ManagementTools {
         retentionRequired?: boolean;
       };
       details?: string;
+      planId?: string;
+      stepId?: string;
+      provenance?: {
+        itemIds?: string[];
+        searchIds?: string[];
+        auditIds?: string[];
+      };
+      resultHash?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'log_audit');
+
+    // Actor block per plan §8.3: agent id + token jti + request id.
+    // NOTE: AgentIdentity carries no `jti` today — agents authenticate with
+    // static bearer tokens (AgentIdentityService), not JWTs, so there is no
+    // jti to record. The field is emitted (null) so the audit schema is
+    // stable if/when agent tokens become JWTs. Request id is taken from the
+    // inbound x-request-id header when the transport provides one.
+    const requestIdHeader = req?.headers?.['x-request-id'];
+    const requestId = Array.isArray(requestIdHeader)
+      ? requestIdHeader[0]
+      : requestIdHeader;
 
     await this.gateway.post<any>('project', '/audit-logs', {
       action: params.action,
@@ -330,6 +373,16 @@ export class ManagementTools {
       organizationId: agent.organizationId,
       source: 'openclaw-agent',
       timestamp: new Date().toISOString(),
+      // --- audit v2 (plan §8.3) ---
+      actor: {
+        agentId: agent.id,
+        tokenJti: null,
+        requestId: requestId ?? null,
+      },
+      planId: params.planId,
+      stepId: params.stepId,
+      provenance: params.provenance,
+      resultHash: params.resultHash,
     });
 
     return {
