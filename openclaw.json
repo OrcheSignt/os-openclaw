@@ -8,6 +8,60 @@
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     }
   },
+  "mcp": {
+    "servers": {
+      "orchesight-ediscovery": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_EDISCOVERY}"
+        },
+        "codex": {
+          "agents": ["ediscovery"]
+        }
+      },
+      "orchesight-privacy": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_PRIVACY}"
+        },
+        "codex": {
+          "agents": ["privacy"]
+        }
+      },
+      "orchesight-cyber": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_CYBER}"
+        },
+        "codex": {
+          "agents": ["cyber"]
+        }
+      },
+      "orchesight-compliance": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_COMPLIANCE}"
+        },
+        "codex": {
+          "agents": ["compliance"]
+        }
+      },
+      "orchesight-recommendations": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_RECOMMENDATIONS}"
+        },
+        "codex": {
+          "agents": ["recommendations"]
+        }
+      }
+    }
+  },
   "agents": {
     "defaults": {
       "model": {
