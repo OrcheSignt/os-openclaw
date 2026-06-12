@@ -175,8 +175,12 @@ export class ComposerService {
    * Structured, LLM-readable feedback for the bounded re-ask: names each
    * fabricated citation id with its claim, each uncited sentence, and the
    * set of citation ids that are actually available.
+   *
+   * Public: compose() uses it for the in-process re-ask loop, and the
+   * planner tool family (compose_answer) uses it for the tool-mediated
+   * re-ask loop, so both paths return byte-identical feedback.
    */
-  private buildFeedback(
+  buildFeedback(
     verification: DraftVerification,
     citations: Citation[],
   ): string {
@@ -215,8 +219,11 @@ export class ComposerService {
    * exhausted: sentences carrying a fabricated citation id and uncited
    * declarative sentences. Returns the cleaned text plus the removed claims
    * (marker syntax flattened to plain claim text) in document order.
+   *
+   * Public: shared by compose() and the planner tool family (compose_answer
+   * exhaustion path) so stripping behavior cannot drift between the two.
    */
-  private stripOffendingSentences(
+  stripOffendingSentences(
     draft: string,
     verification: DraftVerification,
   ): { text: string; removedClaims: string[] } {
@@ -264,8 +271,10 @@ export class ComposerService {
    * Marker id -> Citation map for every resolvable marker present in the
    * final text. For the marker-integrity path the marker id is the citation
    * id itself (see composer.types.ts).
+   *
+   * Public: shared by compose() and the planner tool family (compose_answer).
    */
-  private buildCitationMap(
+  buildCitationMap(
     text: string,
     citations: Citation[],
   ): Record<string, Citation> {
