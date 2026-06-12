@@ -1,11 +1,15 @@
+# Build from the REPO ROOT context (docker build -f mcp/Dockerfile .) —
+# AgentIdentityService loads agent allowlists from openclaw.json, which
+# lives at the repo root, so the image must carry it alongside the app.
+
 # Build stage
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY mcp/package*.json ./
 RUN npm install
-COPY . .
+COPY mcp/ .
 RUN npm run build && ls -la /app/dist
 
 # Production stage
@@ -21,9 +25,11 @@ RUN apk add --no-cache dumb-init
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
-COPY package*.json ./
+COPY mcp/package*.json ./
 RUN npm i --only=production && npm cache clean --force
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+# /app/openclaw.json is the first path AgentIdentityService probes.
+COPY --chown=nodejs:nodejs openclaw.json ./openclaw.json
 
 RUN mkdir -p logs && chown -R nodejs:nodejs logs
 

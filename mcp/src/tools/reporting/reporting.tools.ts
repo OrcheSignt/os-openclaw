@@ -6,8 +6,10 @@ import { GatewayClientService } from '../../gateway-client/gateway-client.servic
 import {
   assertAgentMayCall,
   requireAgent,
+  requireOrganizationId,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class ReportingTools {
@@ -37,6 +39,7 @@ export class ReportingTools {
         .record(z.string(), z.any())
         .optional()
         .describe('Optional filters to narrow the report scope'),
+      authContext: authContextParam,
     }),
   })
   async generateReport(
@@ -44,12 +47,14 @@ export class ReportingTools {
       caseId: string;
       reportType: string;
       filters?: Record<string, any>;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'generate_report');
+    requireOrganizationId(req, agent, params.authContext);
 
     try {
       const result = await this.gateway.post<any>(
@@ -101,6 +106,7 @@ export class ReportingTools {
         .array(z.string())
         .optional()
         .describe('Fields to include in export'),
+      authContext: authContextParam,
     }),
   })
   async exportItems(
@@ -109,12 +115,14 @@ export class ReportingTools {
       itemIds?: string[];
       format: string;
       fields?: string[];
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'export_items');
+    requireOrganizationId(req, agent, params.authContext);
 
     try {
       const result = await this.gateway.post<any>(

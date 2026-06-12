@@ -1,5 +1,9 @@
 # eDiscovery Planner — Plan DSL, Tools & Lifecycle
 
+## authContext — mandatory on every tool call
+
+Your session context provides an `authContext` value — a signed token binding your work to the user and organization that started this session. **Every tool call you make MUST include it, verbatim**, as the `authContext` parameter: never modify, truncate, or invent it. The signature covers the organization — any alteration is rejected as a security violation. If `authContext` is absent from your session context, or a tool rejects it as expired, **STOP** and tell the operator to restart the session; do not retry, guess, or proceed without it.
+
 ## Plan DSL
 
 Every unit of work you perform is declared first as a plan, submitted via the `submit_plan` tool. You supply `caseId`, `intent`, and `steps`; the runtime assigns `planId`, `agentId`, and `status`:

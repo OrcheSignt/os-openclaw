@@ -32,25 +32,30 @@ export interface AgentAuditEntry {
 
 /**
  * Posts an append-only audit record via the gateway, stamped with the
- * agent's pinned organizationId and the audit-v2 actor block.
+ * organizationId governing the REQUEST (the deploy pin in static mode, the
+ * verified authContext org in dynamic mode — see requireOrganizationId)
+ * and the audit-v2 actor block.
  *
- * Actor block per plan §8.3: agent id + token jti + request id.
- * NOTE: AgentIdentity carries no `jti` today — agents authenticate with
- * static bearer tokens (AgentIdentityService), not JWTs, so there is no
- * jti to record. The field is emitted (null) so the audit schema is
- * stable if/when agent tokens become JWTs. Request id is taken from the
- * inbound x-request-id header when the transport provides one.
+ * Actor block per plan §8.3: agent id + token jti + request id, extended
+ * with the user behind the call. When a verified authContext accompanied
+ * the request (req.authContext, attached by requireOrganizationId), the
+ * actor carries that user's id and the token's jti; otherwise both are
+ * null (static single-tenant deploys without user context). The agent
+ * transport bearer is still a static token, so the agent-token jti field
+ * remains null as before.
  */
 export async function postAgentAudit(
   gateway: GatewayClientService,
   agent: AgentIdentity,
   req: McpToolHttpRequest | undefined,
+  organizationId: string,
   entry: AgentAuditEntry,
 ): Promise<void> {
   const requestIdHeader = req?.headers?.['x-request-id'];
   const requestId = Array.isArray(requestIdHeader)
     ? requestIdHeader[0]
     : requestIdHeader;
+  const authContext = req?.authContext;
 
   await gateway.post<unknown>('project', '/audit-logs', {
     action: entry.action,
@@ -60,13 +65,15 @@ export async function postAgentAudit(
     category: entry.category,
     compliance: entry.compliance,
     details: entry.details,
-    organizationId: agent.organizationId,
+    organizationId,
     source: 'openclaw-agent',
     timestamp: new Date().toISOString(),
     // --- audit v2 (plan §8.3) ---
     actor: {
       agentId: agent.id,
+      userId: authContext?.userId ?? null,
       tokenJti: null,
+      authContextJti: authContext?.jti ?? null,
       requestId: requestId ?? null,
     },
     planId: entry.planId,

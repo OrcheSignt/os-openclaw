@@ -1,7 +1,11 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { GatewayClientService } from '../gateway-client/gateway-client.service.js';
 import type { AgentIdentity } from './agent-identity.service.js';
-import { requireAgent, type McpToolHttpRequest } from './agent-context.js';
+import {
+  requireAgent,
+  requireOrganizationId,
+  type McpToolHttpRequest,
+} from './agent-context.js';
 
 // ---------------------------------------------------------------------------
 // Contract types for GET /internal/case-context/:caseId (WS-1, os-investigation)
@@ -131,9 +135,10 @@ export class CaseContextService {
 
   /**
    * Resolves the case context for `caseId` and verifies it belongs to the
-   * calling agent's pinned organization.
+   * REQUEST organization — the org governing this tool call (the deploy
+   * pin in static mode, or the verified authContext org in dynamic mode).
    *
-   * SECURITY: `caseId` is LLM-supplied. Mirroring resolveOrganizationId(),
+   * SECURITY: `caseId` is LLM-supplied. Mirroring requireOrganizationId(),
    * an organization mismatch is treated as a prompt-injection signal and is
    * a hard ForbiddenException — never silently corrected. The org check runs
    * on every call, including cache hits, so a cached context can never leak
@@ -142,6 +147,7 @@ export class CaseContextService {
   async getCaseContext(
     caseId: string,
     agent: AgentIdentity,
+    requestOrganizationId: string,
   ): Promise<CaseContext> {
     if (!caseId || typeof caseId !== 'string') {
       throw new ForbiddenException(
@@ -151,28 +157,40 @@ export class CaseContextService {
 
     const cached = this.cacheGet(caseId);
     if (cached) {
-      this.assertOrganization(cached.context, agent);
+      this.assertOrganization(cached.context, agent, requestOrganizationId);
       return cached.context;
     }
 
     const context = await this.fetchCaseContext(caseId);
     this.cacheSet(caseId, context);
-    this.assertOrganization(context, agent);
+    this.assertOrganization(context, agent, requestOrganizationId);
     return context;
   }
 
   /**
    * Tool-handler entry point (the requireAgent()-style helper).
-   * Fail-closed: throws if the agent identity is missing, the caseId is
+   * Fail-closed: throws if the agent identity is missing, the org for this
+   * call cannot be established (requireOrganizationId — in dynamic mode
+   * this is where a missing/invalid authContext is rejected), the caseId is
    * unusable, the backend cannot assemble the context, or the case belongs
    * to a different organization. Attaches the result to req.caseContext.
    */
   async requireCaseContext(
     req: McpToolHttpRequest | undefined,
     caseId: string,
+    authContext?: string,
   ): Promise<CaseContext> {
     const agent = requireAgent(req);
-    const context = await this.getCaseContext(caseId, agent);
+    const requestOrganizationId = requireOrganizationId(
+      req,
+      agent,
+      authContext,
+    );
+    const context = await this.getCaseContext(
+      caseId,
+      agent,
+      requestOrganizationId,
+    );
     if (req) {
       req.caseContext = context;
     }
@@ -216,13 +234,17 @@ export class CaseContextService {
     return raw;
   }
 
-  private assertOrganization(context: CaseContext, agent: AgentIdentity): void {
-    if (context.organizationId !== agent.organizationId) {
+  private assertOrganization(
+    context: CaseContext,
+    agent: AgentIdentity,
+    requestOrganizationId: string,
+  ): void {
+    if (context.organizationId !== requestOrganizationId) {
       throw new ForbiddenException(
         `Case "${context.caseId}" belongs to organization ` +
           `"${context.organizationId}", which does not match the ` +
-          `organizationId "${agent.organizationId}" pinned to agent ` +
-          `"${agent.id}". Refusing to provide case context.`,
+          `organizationId "${requestOrganizationId}" governing this call ` +
+          `by agent "${agent.id}". Refusing to provide case context.`,
       );
     }
   }

@@ -6,8 +6,10 @@ import { GatewayClientService } from '../../gateway-client/gateway-client.servic
 import {
   assertAgentMayCall,
   requireAgent,
+  requireOrganizationId,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class PipelineTools {
@@ -22,15 +24,17 @@ export class PipelineTools {
       'Returns progress, stage, error count, and completion estimate.',
     parameters: z.object({
       pipelineId: z.string().describe('Pipeline/job ID to check'),
+      authContext: authContextParam,
     }),
   })
   async getPipelineStatus(
-    params: { pipelineId: string },
+    params: { pipelineId: string; authContext?: string },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'get_pipeline_status');
+    requireOrganizationId(req, agent, params.authContext);
 
     try {
       const result = await this.gateway.get<any>(
@@ -87,6 +91,7 @@ export class PipelineTools {
         .record(z.string(), z.any())
         .optional()
         .describe('Enrichment-specific options'),
+      authContext: authContextParam,
     }),
   })
   async triggerEnrichment(
@@ -95,12 +100,14 @@ export class PipelineTools {
       enrichmentType: string;
       itemIds?: string[];
       options?: Record<string, any>;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'trigger_enrichment');
+    requireOrganizationId(req, agent, params.authContext);
 
     try {
       const result = await this.gateway.post<any>(
