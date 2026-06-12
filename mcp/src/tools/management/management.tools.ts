@@ -6,9 +6,11 @@ import { GatewayClientService } from '../../gateway-client/gateway-client.servic
 import {
   assertAgentMayCall,
   requireAgent,
+  requireOrganizationId,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
 import { postAgentAudit } from '../shared/agent-audit.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class ManagementTools {
@@ -38,6 +40,7 @@ export class ManagementTools {
         .optional()
         .describe('URL to navigate to when clicked'),
       caseId: z.string().optional().describe('Related case ID'),
+      authContext: authContextParam,
     }),
   })
   async createNotification(
@@ -49,12 +52,14 @@ export class ManagementTools {
       priority: string;
       actionUrl?: string;
       caseId?: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'create_notification');
+    requireOrganizationId(req, agent, params.authContext);
 
     const result = await this.gateway.post<any>(
       'project',
@@ -110,6 +115,7 @@ export class ManagementTools {
         .array(z.string())
         .optional()
         .describe('Tags for categorization'),
+      authContext: authContextParam,
     }),
   })
   async createTask(
@@ -121,16 +127,18 @@ export class ManagementTools {
       dueDate?: string;
       description?: string;
       tags?: string[];
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'create_task');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
 
     const result = await this.gateway.post<any>('project', '/tasks', {
       title: params.title,
-      organizationId: agent.organizationId,
+      organizationId,
       caseId: params.caseId,
       assignedToList: params.assignedToList,
       priority: params.priority,
@@ -172,6 +180,7 @@ export class ManagementTools {
         .max(2000)
         .optional()
         .describe('Comment to add to the task'),
+      authContext: authContextParam,
     }),
   })
   async updateTask(
@@ -180,12 +189,14 @@ export class ManagementTools {
       status?: string;
       progress?: number;
       comment?: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'update_task');
+    requireOrganizationId(req, agent, params.authContext);
 
     const updates: string[] = [];
 
@@ -238,15 +249,17 @@ export class ManagementTools {
         .min(0)
         .max(100)
         .describe('Progress percentage (0-100)'),
+      authContext: authContextParam,
     }),
   })
   async updateCaseProgress(
-    params: { caseId: string; progress: number },
+    params: { caseId: string; progress: number; authContext?: string },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'update_case_progress');
+    requireOrganizationId(req, agent, params.authContext);
 
     await this.gateway.patch<any>(
       'project',
@@ -322,6 +335,7 @@ export class ManagementTools {
         .string()
         .optional()
         .describe('Hash of the action result, for tamper-evident audit'),
+      authContext: authContextParam,
     }),
   })
   async logAudit(
@@ -345,16 +359,18 @@ export class ManagementTools {
         auditIds?: string[];
       };
       resultHash?: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'log_audit');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
 
-    // Payload construction (actor block, org pinning, audit-v2 linkage) is
+    // Payload construction (actor block, org scoping, audit-v2 linkage) is
     // factored into postAgentAudit, shared with the planner tool family.
-    await postAgentAudit(this.gateway, agent, req, {
+    await postAgentAudit(this.gateway, agent, req, organizationId, {
       action: params.action,
       resourceType: params.resourceType,
       resourceId: params.resourceId,

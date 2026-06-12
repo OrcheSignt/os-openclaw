@@ -8,9 +8,11 @@ import { CaseContextService } from '../../security/case-context.service.js';
 import {
   assertAgentMayCall,
   requireAgent,
+  requireOrganizationId,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
 import type { AgentIdentity } from '../../security/agent-identity.service.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 import { validatePlan, type PlanStatus } from '../../planner/plan-dsl.js';
 import { ComposerService } from '../../planner/composer.service.js';
 import { PlanExecutionRegistry } from '../../planner/plan-execution-registry.js';
@@ -110,6 +112,7 @@ export class PlannerTools {
         .describe(
           'Plan steps: [{ stepId, tool, params, successCriterion, dependsOn[] }]',
         ),
+      authContext: authContextParam,
     }),
   })
   async submitPlan(
@@ -117,18 +120,29 @@ export class PlannerTools {
       caseId: string;
       intent: string;
       steps: Array<Record<string, unknown>>;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'submit_plan');
+    const organizationId = requireOrganizationId(
+      req,
+      agent,
+      params.authContext,
+    );
 
     // Fail-closed org validation: resolving the case context verifies the
-    // LLM-supplied caseId belongs to the agent's pinned organization
-    // (ForbiddenException on mismatch). The context fetch IS the org check —
-    // nothing from it is attached to the tool response.
-    await this.caseContext.requireCaseContext(req, params.caseId);
+    // LLM-supplied caseId belongs to the REQUEST organization (static pin
+    // or verified authContext org — ForbiddenException on mismatch). The
+    // context fetch IS the org check — nothing from it is attached to the
+    // tool response.
+    await this.caseContext.requireCaseContext(
+      req,
+      params.caseId,
+      params.authContext,
+    );
 
     // The runtime owns planId / agentId / status — never the LLM.
     const planId = randomUUID();
@@ -154,12 +168,12 @@ export class PlannerTools {
 
     await this.gateway.createAgentPlan(
       validated.plan as unknown as Record<string, unknown>,
-      agent.organizationId,
+      organizationId,
       agent.id,
     );
     this.registry.getOrCreate(planId);
 
-    await postAgentAudit(this.gateway, agent, req, {
+    await postAgentAudit(this.gateway, agent, req, organizationId, {
       action: 'plan_submitted',
       resourceType: 'agent_plan',
       resourceId: planId,
@@ -171,7 +185,7 @@ export class PlannerTools {
     // Demo/dev convenience ONLY: the SERVER (not the agent) approves.
     if (process.env.OPENCLAW_PLAN_AUTOAPPROVE === 'true') {
       await this.transition(planId, 'approved', 'system:auto-approve');
-      await postAgentAudit(this.gateway, agent, req, {
+      await postAgentAudit(this.gateway, agent, req, organizationId, {
         action: 'plan_auto_approved',
         resourceType: 'agent_plan',
         resourceId: planId,
@@ -206,17 +220,27 @@ export class PlannerTools {
       'approval after submit_plan (execute steps only once status is "approved").',
     parameters: z.object({
       planId: z.string().min(1).describe('The plan id returned by submit_plan'),
+      authContext: authContextParam,
     }),
   })
   async getPlan(
-    params: { planId: string },
+    params: { planId: string; authContext?: string },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'get_plan');
+    const organizationId = requireOrganizationId(
+      req,
+      agent,
+      params.authContext,
+    );
 
-    const plan = await this.fetchPlanForAgent(params.planId, agent);
+    const plan = await this.fetchPlanForAgent(
+      params.planId,
+      agent,
+      organizationId,
+    );
     return this.text(
       JSON.stringify(
         {
@@ -264,6 +288,7 @@ export class PlannerTools {
         .string()
         .optional()
         .describe('Audit id returned by the dispatched tool, if any'),
+      authContext: authContextParam,
     }),
   })
   async recordStepResult(
@@ -273,14 +298,24 @@ export class PlannerTools {
       summary: string;
       citations: Array<{ itemId: string; chunkId?: string; searchId?: string }>;
       auditId?: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'record_step_result');
+    const organizationId = requireOrganizationId(
+      req,
+      agent,
+      params.authContext,
+    );
 
-    const plan = await this.fetchPlanForAgent(params.planId, agent);
+    const plan = await this.fetchPlanForAgent(
+      params.planId,
+      agent,
+      organizationId,
+    );
 
     if (plan.status === 'draft') {
       return this.text(
@@ -333,7 +368,7 @@ export class PlannerTools {
     const searchIds = [
       ...new Set(citations.map((c) => c.searchId).filter((s): s is string => !!s)),
     ];
-    await postAgentAudit(this.gateway, agent, req, {
+    await postAgentAudit(this.gateway, agent, req, organizationId, {
       action: 'plan_step_recorded',
       resourceType: 'agent_plan_step',
       resourceId: params.stepId,
@@ -377,17 +412,27 @@ export class PlannerTools {
           'Answer draft with inline [claim](cite:<citationId>) markers, ' +
             'grounded only in recorded step outputs',
         ),
+      authContext: authContextParam,
     }),
   })
   async composeAnswer(
-    params: { planId: string; draft: string },
+    params: { planId: string; draft: string; authContext?: string },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'compose_answer');
+    const organizationId = requireOrganizationId(
+      req,
+      agent,
+      params.authContext,
+    );
 
-    const plan = await this.fetchPlanForAgent(params.planId, agent);
+    const plan = await this.fetchPlanForAgent(
+      params.planId,
+      agent,
+      organizationId,
+    );
 
     if (plan.status === 'draft') {
       return this.text(
@@ -467,7 +512,7 @@ export class PlannerTools {
     const citedItemIds = [
       ...new Set(Object.values(citationMap).map((c) => c.itemId)),
     ];
-    await postAgentAudit(this.gateway, agent, req, {
+    await postAgentAudit(this.gateway, agent, req, organizationId, {
       action: 'plan_completed',
       resourceType: 'agent_plan',
       resourceId: params.planId,
@@ -519,17 +564,27 @@ export class PlannerTools {
         .min(1)
         .max(2000)
         .describe('Why the plan is being aborted'),
+      authContext: authContextParam,
     }),
   })
   async abortPlan(
-    params: { planId: string; reason: string },
+    params: { planId: string; reason: string; authContext?: string },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'abort_plan');
+    const organizationId = requireOrganizationId(
+      req,
+      agent,
+      params.authContext,
+    );
 
-    const plan = await this.fetchPlanForAgent(params.planId, agent);
+    const plan = await this.fetchPlanForAgent(
+      params.planId,
+      agent,
+      organizationId,
+    );
 
     try {
       await this.gateway.updateAgentPlanStatus(
@@ -549,7 +604,7 @@ export class PlannerTools {
       throw err;
     }
 
-    await postAgentAudit(this.gateway, agent, req, {
+    await postAgentAudit(this.gateway, agent, req, organizationId, {
       action: 'plan_aborted',
       resourceType: 'agent_plan',
       resourceId: params.planId,
@@ -575,23 +630,28 @@ export class PlannerTools {
   }
 
   /**
-   * Fetches the persisted plan and pins it to the calling agent's
-   * organization, fail-closed: a missing/foreign organizationId is a
+   * Fetches the persisted plan and pins it to the REQUEST organization
+   * (the deploy pin in static mode, the verified authContext org in
+   * dynamic mode), fail-closed: a missing/foreign organizationId is a
    * ForbiddenException (planId is LLM-supplied — same posture as
    * CaseContextService for caseId).
    */
   private async fetchPlanForAgent(
     planId: string,
     agent: AgentIdentity,
+    requestOrganizationId: string,
   ): Promise<PersistedAgentPlan> {
     const plan = await this.gateway.getAgentPlan<PersistedAgentPlan>(planId);
     if (!plan) {
       throw new Error(`Plan "${planId}" was not found.`);
     }
-    if (!plan.organizationId || plan.organizationId !== agent.organizationId) {
+    if (
+      !plan.organizationId ||
+      plan.organizationId !== requestOrganizationId
+    ) {
       throw new ForbiddenException(
-        `Plan "${planId}" does not belong to the organization pinned to ` +
-          `agent "${agent.id}". Refusing to operate on it.`,
+        `Plan "${planId}" does not belong to the organization governing ` +
+          `this call by agent "${agent.id}". Refusing to operate on it.`,
       );
     }
     return plan;

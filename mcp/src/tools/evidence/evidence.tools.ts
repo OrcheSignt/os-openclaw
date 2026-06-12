@@ -6,9 +6,10 @@ import { GatewayClientService } from '../../gateway-client/gateway-client.servic
 import {
   assertAgentMayCall,
   requireAgent,
-  resolveOrganizationId,
+  requireOrganizationId,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class EvidenceTools {
@@ -48,6 +49,7 @@ export class EvidenceTools {
         .enum(['keyword', 'semantic', 'hybrid'])
         .default('hybrid')
         .describe('Search mode'),
+      authContext: authContextParam,
     }),
   })
   async searchEvidence(
@@ -58,12 +60,14 @@ export class EvidenceTools {
       size: number;
       sort: string;
       searchMode: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'search_evidence');
+    requireOrganizationId(req, agent, params.authContext);
 
     const size = Math.min(params.size || 10, 50);
 
@@ -132,6 +136,7 @@ export class EvidenceTools {
         .min(1)
         .max(500)
         .describe('Item IDs to tag'),
+      authContext: authContextParam,
     }),
   })
   async tagItems(
@@ -140,16 +145,18 @@ export class EvidenceTools {
       tagName: string;
       tagColor?: string;
       itemIds: string[];
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'tag_items');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
 
     const result = await this.gateway.post<any>('investigation', '/tags/apply', {
       caseId: params.caseId,
-      organizationId: agent.organizationId,
+      organizationId,
       tagName: params.tagName,
       tagColor: params.tagColor || '#3B82F6',
       itemIds: params.itemIds,
@@ -178,6 +185,7 @@ export class EvidenceTools {
         .default('hybrid')
         .describe('Search method'),
       tagName: z.string().describe('Tag name to apply'),
+      authContext: authContextParam,
     }),
   })
   async bulkTag(
@@ -186,19 +194,21 @@ export class EvidenceTools {
       searchTerm: string;
       searchMethod: string;
       tagName: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'bulk_tag');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
 
     const result = await this.gateway.post<any>(
       'investigation',
       '/tags/search-and-tag',
       {
         caseId: params.caseId,
-        organizationId: agent.organizationId,
+        organizationId,
         searchTerm: params.searchTerm,
         searchMethod: params.searchMethod,
         tagName: params.tagName,
@@ -227,15 +237,17 @@ export class EvidenceTools {
         .min(1)
         .max(50)
         .describe('Item IDs to retrieve (max 50)'),
+      authContext: authContextParam,
     }),
   })
   async getItemDetails(
-    params: { caseId: string; itemIds: string[] },
+    params: { caseId: string; itemIds: string[]; authContext?: string },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'get_item_details');
+    requireOrganizationId(req, agent, params.authContext);
 
     const itemIds = params.itemIds.slice(0, 50);
 
@@ -293,6 +305,7 @@ export class EvidenceTools {
         .max(50)
         .default(10)
         .describe('Max buckets for terms aggregation'),
+      authContext: authContextParam,
     }),
   })
   async aggregateData(
@@ -302,12 +315,14 @@ export class EvidenceTools {
       field: string;
       interval?: string;
       size: number;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'aggregate_data');
+    requireOrganizationId(req, agent, params.authContext);
 
     const agg: any = {
       name: 'result',
@@ -442,7 +457,3 @@ export class EvidenceTools {
     return String(field);
   }
 }
-
-// Reference resolveOrganizationId so it remains tree-shake-safe as future
-// tool methods adopt the LLM-vs-pinned reconciliation pattern.
-void resolveOrganizationId;

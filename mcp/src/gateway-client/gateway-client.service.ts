@@ -168,6 +168,9 @@ export class GatewayClientService {
   /**
    * WS-3: persist a validated agent plan to the `agent_plans` collection.
    * POST /internal/agent-plans. Plans are case data: org- and agent-scoped.
+   * `organizationId` is the REQUEST org resolved by the caller via
+   * requireOrganizationId (deploy pin in static mode, verified authContext
+   * org in dynamic mode) — never agent state and never an LLM parameter.
    */
   async createAgentPlan<T = unknown>(
     plan: Record<string, unknown>,

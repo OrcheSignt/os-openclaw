@@ -7,8 +7,10 @@ import { GatewayClientService } from '../../gateway-client/gateway-client.servic
 import {
   assertAgentMayCall,
   requireAgent,
+  requireOrganizationId,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class MlTools {
@@ -48,6 +50,7 @@ export class MlTools {
         .string()
         .optional()
         .describe('For translate: target ISO language code (e.g. "en", "he")'),
+      authContext: authContextParam,
     }),
   })
   async analyzeText(
@@ -57,12 +60,14 @@ export class MlTools {
       entityTypes?: string[];
       categories?: string[];
       targetLanguage?: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'analyze_text');
+    requireOrganizationId(req, agent, params.authContext);
 
     let text = params.text;
     if (text.length > 5000) {
@@ -117,6 +122,7 @@ export class MlTools {
       analysisType: z
         .enum(['ocr', 'detect_objects', 'detect_faces'])
         .describe('Type of image analysis'),
+      authContext: authContextParam,
     }),
   })
   async analyzeImage(
@@ -124,12 +130,14 @@ export class MlTools {
       caseId: string;
       itemId: string;
       analysisType: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'analyze_image');
+    requireOrganizationId(req, agent, params.authContext);
 
     try {
       const searchResult = await this.gateway.post<any>(

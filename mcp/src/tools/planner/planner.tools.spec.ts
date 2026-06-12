@@ -1,5 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
+import * as jwt from 'jsonwebtoken';
 import type { Context } from '@rekog/mcp-nest';
+import { AUTH_CONTEXT_SCOPE } from '../../security/auth-context.service.js';
 import { PlannerTools } from './planner.tools.js';
 import { ComposerService } from '../../planner/composer.service.js';
 import { PlanExecutionRegistry } from '../../planner/plan-execution-registry.js';
@@ -130,7 +132,11 @@ describe('PlannerTools', () => {
     // -- submit (auto-approved by the SERVER, by: system:auto-approve) --
     const planId = await submitValidPlan();
 
-    expect(caseContext.requireCaseContext).toHaveBeenCalledWith(req, 'case-1');
+    expect(caseContext.requireCaseContext).toHaveBeenCalledWith(
+      req,
+      'case-1',
+      undefined,
+    );
     expect(gateway.createAgentPlan).toHaveBeenCalledWith(
       expect.objectContaining({
         planId,
@@ -556,5 +562,115 @@ describe('PlannerTools', () => {
     await expect(
       tools.composeAnswer({ planId: 'p1', draft: 'x' }, ctx, restrictedReq),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  // ---------------------------------------------------------------------------
+  // dynamic org binding (authContext)
+  // ---------------------------------------------------------------------------
+
+  describe('dynamic org binding (authContext)', () => {
+    const SECRET = 'unit-test-jwt-secret-at-least-32-characters!!';
+    const TOKEN_ORG = '777777777777777777777777';
+    const DYNAMIC_AGENT: AgentIdentity = {
+      id: AGENT.id,
+      organizationId: null,
+      allow: AGENT.allow,
+    };
+    let prevSecret: string | undefined;
+    let dynReq: McpToolHttpRequest;
+
+    beforeAll(() => {
+      prevSecret = process.env.JWT_SECRET;
+      process.env.JWT_SECRET = SECRET;
+    });
+
+    afterAll(() => {
+      if (prevSecret === undefined) delete process.env.JWT_SECRET;
+      else process.env.JWT_SECRET = prevSecret;
+    });
+
+    beforeEach(() => {
+      dynReq = { openClawAgent: DYNAMIC_AGENT, headers: {} };
+    });
+
+    function mintToken(org = TOKEN_ORG): string {
+      return jwt.sign(
+        { sub: 'user-7', org, scope: AUTH_CONTEXT_SCOPE, jti: 'jti-77' },
+        SECRET,
+        { algorithm: 'HS256', expiresIn: 600 },
+      );
+    }
+
+    it('checks the persisted plan org against the TOKEN org, not agent state', async () => {
+      gateway.getAgentPlan.mockResolvedValue({
+        ...persistedPlan('p1', 'approved'),
+        organizationId: TOKEN_ORG,
+      });
+      const result = await tools.getPlan(
+        { planId: 'p1', authContext: mintToken() },
+        ctx,
+        dynReq,
+      );
+      expect(resultText(result)).toContain('"planId": "p1"');
+    });
+
+    it('rejects a plan persisted under a different org even with a valid token', async () => {
+      // persistedPlan carries ORG ('org-1'), the token carries TOKEN_ORG
+      gateway.getAgentPlan.mockResolvedValue(persistedPlan('p1', 'approved'));
+      await expect(
+        tools.getPlan({ planId: 'p1', authContext: mintToken() }, ctx, dynReq),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('fails closed when a planner tool is called without authContext', async () => {
+      await expect(
+        tools.getPlan({ planId: 'p1' }, ctx, dynReq),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(gateway.getAgentPlan).not.toHaveBeenCalled();
+    });
+
+    it('persists submitted plans under the token org and audits the user', async () => {
+      const token = mintToken();
+      caseContext.requireCaseContext.mockResolvedValue({
+        caseId: 'case-1',
+        organizationId: TOKEN_ORG,
+      });
+
+      const result = await tools.submitPlan(
+        {
+          caseId: 'case-1',
+          intent: 'Find the Q3 wire communications for the token org',
+          steps: STEPS,
+          authContext: token,
+        },
+        ctx,
+        dynReq,
+      );
+      const planId = extractPlanId(resultText(result));
+
+      expect(caseContext.requireCaseContext).toHaveBeenCalledWith(
+        dynReq,
+        'case-1',
+        token,
+      );
+      expect(gateway.createAgentPlan).toHaveBeenCalledWith(
+        expect.objectContaining({ planId, caseId: 'case-1' }),
+        TOKEN_ORG,
+        AGENT.id,
+      );
+      expect(gateway.post).toHaveBeenCalledWith(
+        'project',
+        '/audit-logs',
+        expect.objectContaining({
+          action: 'plan_submitted',
+          organizationId: TOKEN_ORG,
+          actor: expect.objectContaining({
+            agentId: AGENT.id,
+            userId: 'user-7',
+            authContextJti: 'jti-77',
+          }),
+        }),
+      );
+    });
   });
 });

@@ -6,14 +6,36 @@ import { isAbsolute, resolve } from 'path';
 /**
  * Agent identity resolved from a bearer token.
  *
- * Tools should consume `organizationId` from this object (populated on the
- * request by McpAuthGuard) rather than from LLM-supplied parameters.
+ * ORG BINDING MODES (see also agent-context.ts requireOrganizationId):
+ *
+ *   STATIC  — OPENCLAW_AGENT_ORG_<ID> (or the JSON blob) is set for the
+ *             agent: `organizationId` is pinned at deploy time. Tool calls
+ *             use the pinned org; an authContext token, if also supplied,
+ *             is verified and must agree with the pin (mismatch is treated
+ *             as an injection signal). This keeps single-tenant / on-prem
+ *             deploys working unchanged.
+ *
+ *   DYNAMIC — no org env var for the agent: `organizationId` is null at
+ *             identity load. EVERY tool call must then carry a valid
+ *             `authContext` token (HS256, signed by os-investigation with
+ *             the shared JWT_SECRET); the request org is the verified
+ *             token org — the active org of the user who started the
+ *             chat/procedure. Missing/invalid token fails closed.
+ *
+ * Tools must never read `organizationId` from LLM-supplied parameters;
+ * resolve it via requireOrganizationId(req, agent, authContext).
  */
 export interface AgentIdentity {
   id: string;
-  organizationId: string;
+  /** Pinned org (STATIC mode) or null (DYNAMIC mode — org per request). */
+  organizationId: string | null;
   allow: ReadonlySet<string> | null;
 }
+
+/** Pinned org ids must be Mongo ObjectIds — anything else (including the
+ *  deploy placeholders like REPLACE_WITH_DEV_TENANT_ORG_ID) is treated as
+ *  "configured but invalid" and is fatal at boot. */
+const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/;
 
 interface AgentConfig {
   id: string;
@@ -38,8 +60,12 @@ interface OpenclawConfig {
  *   1. OPENCLAW_AGENT_ORG_JSON='{"ediscovery":"<orgId>",...}'
  *   2. OPENCLAW_AGENT_ORG_EDISCOVERY=<orgId> etc.
  *
- * Fails closed at boot if either mapping is missing for any configured
- * agent -- the MCP server will not start.
+ * Fails closed at boot if a token is missing for any configured agent, or
+ * if an org value is SET but not a valid ObjectId (e.g. a deploy
+ * placeholder) -- the MCP server will not start. An ABSENT org value is
+ * not an error: it selects DYNAMIC org binding for that agent (see the
+ * AgentIdentity doc above), where every tool call must carry a verified
+ * authContext token.
  */
 @Injectable()
 export class AgentIdentityService implements OnModuleInit {
@@ -69,15 +95,24 @@ export class AgentIdentityService implements OnModuleInit {
     const missing: string[] = [];
     for (const agent of agentConfigs) {
       const token = tokenMap.get(agent.id);
-      const organizationId = orgMap.get(agent.id);
+      const organizationId = orgMap.get(agent.id) ?? null;
 
       if (!token) {
         missing.push(`token for "${agent.id}"`);
         continue;
       }
-      if (!organizationId) {
-        missing.push(`organizationId for "${agent.id}"`);
-        continue;
+      // Org binding mode selection:
+      //   - absent  -> DYNAMIC (org resolved per request from authContext),
+      //   - set but not a valid ObjectId (e.g. a "REPLACE_WITH_..." deploy
+      //     placeholder) -> fatal, exactly as before,
+      //   - valid ObjectId -> STATIC pin.
+      if (organizationId !== null && !OBJECT_ID_RE.test(organizationId)) {
+        throw new Error(
+          `AgentIdentityService: organizationId configured for "${agent.id}" ` +
+            `is not a valid ObjectId ("${organizationId}"). Set a real org id ` +
+            `for static pinning, or unset OPENCLAW_AGENT_ORG_* entirely to ` +
+            `enable dynamic per-request org binding via authContext.`,
+        );
       }
       if (this.tokenToAgent.has(token)) {
         throw new Error(
@@ -99,14 +134,18 @@ export class AgentIdentityService implements OnModuleInit {
     if (missing.length > 0) {
       throw new Error(
         `AgentIdentityService: missing required configuration -- ${missing.join(', ')}. ` +
-          `Set OPENCLAW_MCP_TOKENS_JSON / OPENCLAW_AGENT_ORG_JSON or the per-agent ` +
-          `OPENCLAW_MCP_TOKEN_<AGENT> / OPENCLAW_AGENT_ORG_<AGENT> env vars.`,
+          `Set OPENCLAW_MCP_TOKENS_JSON or the per-agent ` +
+          `OPENCLAW_MCP_TOKEN_<AGENT> env vars.`,
       );
     }
 
-    this.logger.log(
-      `Loaded ${this.agents.size} agent identities: ${[...this.agents.keys()].join(', ')}`,
-    );
+    const summary = [...this.agents.values()]
+      .map(
+        (a) =>
+          `${a.id} (${a.organizationId === null ? 'dynamic org' : 'static org'})`,
+      )
+      .join(', ');
+    this.logger.log(`Loaded ${this.agents.size} agent identities: ${summary}`);
   }
 
   /** Resolve a bearer token to an agent identity, or null if unknown. */

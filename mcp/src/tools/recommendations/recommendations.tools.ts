@@ -6,8 +6,10 @@ import { GatewayClientService } from '../../gateway-client/gateway-client.servic
 import {
   assertAgentMayCall,
   requireAgent,
+  requireOrganizationId,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class RecommendationsTools {
@@ -43,6 +45,7 @@ export class RecommendationsTools {
         .array(z.string())
         .optional()
         .describe('Evidence item IDs referenced in this recommendation'),
+      authContext: authContextParam,
     }),
   })
   async saveCaseRecommendation(
@@ -53,19 +56,21 @@ export class RecommendationsTools {
       structured?: Record<string, any>;
       jurisdiction?: { country: string; state?: string };
       evidenceItemIds?: string[];
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'save_case_recommendation');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
 
     try {
       const result = await this.gateway.put<any>(
         'investigation',
         `/case-recommendations/${params.caseId}/${params.type}`,
         {
-          organizationId: agent.organizationId,
+          organizationId,
           content: params.content,
           structured: params.structured,
           jurisdiction: params.jurisdiction,
@@ -109,18 +114,21 @@ export class RecommendationsTools {
         .string()
         .optional()
         .describe('Filter by case type (criminal, civil, cyber, fraud, compliance, internal)'),
+      authContext: authContextParam,
     }),
   })
   async getLegalReferences(
     params: {
       jurisdiction: string;
       case_type?: string;
+      authContext?: string;
     },
     context: Context,
     req?: McpToolHttpRequest,
   ) {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'get_legal_references');
+    requireOrganizationId(req, agent, params.authContext);
 
     try {
       const queryParams = new URLSearchParams({
