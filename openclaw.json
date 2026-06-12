@@ -26,7 +26,9 @@
           "allow": [
             "search_evidence", "get_item_details", "tag_items", "bulk_tag",
             "aggregate_data", "analyze_text", "create_notification",
-            "create_task", "log_audit", "update_case_progress", "generate_report"
+            "create_task", "log_audit", "update_case_progress", "generate_report",
+            "submit_plan", "get_plan", "record_step_result", "compose_answer",
+            "abort_plan"
           ]
         }
       },

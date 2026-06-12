@@ -8,6 +8,7 @@ import {
   requireAgent,
   type McpToolHttpRequest,
 } from '../../security/agent-context.js';
+import { postAgentAudit } from '../shared/agent-audit.js';
 
 @Injectable()
 export class ManagementTools {
@@ -351,34 +352,20 @@ export class ManagementTools {
     const agent = requireAgent(req);
     assertAgentMayCall(agent, 'log_audit');
 
-    // Actor block per plan §8.3: agent id + token jti + request id.
-    // NOTE: AgentIdentity carries no `jti` today — agents authenticate with
-    // static bearer tokens (AgentIdentityService), not JWTs, so there is no
-    // jti to record. The field is emitted (null) so the audit schema is
-    // stable if/when agent tokens become JWTs. Request id is taken from the
-    // inbound x-request-id header when the transport provides one.
-    const requestIdHeader = req?.headers?.['x-request-id'];
-    const requestId = Array.isArray(requestIdHeader)
-      ? requestIdHeader[0]
-      : requestIdHeader;
-
-    await this.gateway.post<any>('project', '/audit-logs', {
+    // Payload construction (actor block, org pinning, audit-v2 linkage) is
+    // factored into postAgentAudit, shared with the planner tool family.
+    await postAgentAudit(this.gateway, agent, req, {
       action: params.action,
       resourceType: params.resourceType,
       resourceId: params.resourceId,
-      severity: params.severity,
+      severity: params.severity as
+        | 'LOW'
+        | 'MEDIUM'
+        | 'HIGH'
+        | 'CRITICAL',
       category: params.category,
       compliance: params.compliance,
       details: params.details,
-      organizationId: agent.organizationId,
-      source: 'openclaw-agent',
-      timestamp: new Date().toISOString(),
-      // --- audit v2 (plan §8.3) ---
-      actor: {
-        agentId: agent.id,
-        tokenJti: null,
-        requestId: requestId ?? null,
-      },
       planId: params.planId,
       stepId: params.stepId,
       provenance: params.provenance,
