@@ -14,6 +14,7 @@ import { HealthModule } from './health/health.module.js';
 import { PlannerModule } from './planner/planner.module.js';
 import { SecurityModule } from './security/security.module.js';
 import { McpAuthGuard } from './security/mcp-auth.guard.js';
+import { MCP_SERVER_NAME } from './mcp-server.constants.js';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { McpAuthGuard } from './security/mcp-auth.guard.js';
     HttpModule,
     SecurityModule,
     McpModule.forRoot({
-      name: 'orchesight-mcp',
+      name: MCP_SERVER_NAME,
       version: '1.0.0',
       transport: McpTransportType.STREAMABLE_HTTP,
       mcpEndpoint: 'mcp',
