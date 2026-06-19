@@ -166,10 +166,18 @@ export class PlannerTools {
       );
     }
 
+    // v2 chat refactor: correlate the plan to its triggering session via
+    // runId = the verified authContext jti (attached to req.authContext by
+    // requireOrganizationId). Absent in static-mode deploys with no
+    // user-context token — passed as undefined, which must not break that
+    // path (createAgentPlan omits it from the body when undefined).
+    const runId = req?.authContext?.jti;
+
     await this.gateway.createAgentPlan(
       validated.plan as unknown as Record<string, unknown>,
       organizationId,
       agent.id,
+      runId,
     );
     this.registry.getOrCreate(planId);
 
@@ -383,6 +391,29 @@ export class PlannerTools {
       },
     });
 
+    // v2 chat refactor: persist a compact, durable copy of this step result
+    // so the run is renderable/reconstructable beyond the in-memory registry.
+    // Best-effort: the in-memory registry is what drives compose, so a
+    // persistence failure must NOT fail the tool — log and continue.
+    const stepCitationIds = citations.map((c) => c.id);
+    try {
+      await this.gateway.persistStepResult(params.planId, organizationId, {
+        stepId: params.stepId,
+        status: 'done',
+        summary: params.summary,
+        citationIds: stepCitationIds,
+        auditId: params.auditId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Durable step-result persistence failed for plan ${params.planId} ` +
+          `step "${params.stepId}" (best-effort; in-memory registry is ` +
+          `authoritative for compose): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+      );
+    }
+
     const allIds = state.citations.map((c) => c.id).join(', ');
     return this.text(
       `Step "${params.stepId}" recorded for plan ${params.planId} ` +
@@ -526,6 +557,27 @@ export class PlannerTools {
       provenance: { itemIds: citedItemIds },
       resultHash,
     });
+
+    // v2 chat refactor: persist the final composed answer onto the durable
+    // plan record so the completed run is renderable/reconstructable. The
+    // executing -> done transition above remains the source of truth for
+    // status; this is an additive durable write. Best-effort: a failure
+    // here must NOT fail the tool (the answer is already returned to the
+    // agent and the status transition has committed) — log and continue.
+    try {
+      await this.gateway.persistAnswer(params.planId, organizationId, {
+        answer: finalText,
+        citationMap,
+        removedClaims,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Durable answer persistence failed for plan ${params.planId} ` +
+          `(best-effort; status transition already committed): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+      );
+    }
 
     this.registry.delete(params.planId);
 

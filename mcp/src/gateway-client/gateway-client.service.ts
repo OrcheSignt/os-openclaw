@@ -171,16 +171,23 @@ export class GatewayClientService {
    * `organizationId` is the REQUEST org resolved by the caller via
    * requireOrganizationId (deploy pin in static mode, verified authContext
    * org in dynamic mode) — never agent state and never an LLM parameter.
+   *
+   * `runId` (v2 chat refactor): the correlation key between the triggering
+   * chat session and this plan — the verified authContext jti. Optional:
+   * static-mode deploys without a user-context token have no jti, so it is
+   * omitted from the body in that case.
    */
   async createAgentPlan<T = unknown>(
     plan: Record<string, unknown>,
     organizationId: string,
     agentId: string,
+    runId?: string,
   ): Promise<T> {
     return this.post<T>('investigation', '/internal/agent-plans', {
       ...plan,
       organizationId,
       agentId,
+      ...(runId ? { runId } : {}),
     });
   }
 
@@ -205,6 +212,55 @@ export class GatewayClientService {
     return this.get<T>(
       'investigation',
       `/internal/agent-plans/${encodeURIComponent(planId)}`,
+    );
+  }
+
+  /**
+   * v2 chat refactor: persist a compact step result onto the plan's durable
+   * record so the run is renderable/reconstructable beyond the in-memory
+   * PlanExecutionRegistry. PATCH /internal/agent-plans/:planId/step-result.
+   * Org-scoped via the ?organizationId query param. Does NOT change plan
+   * status — status ownership stays with updateAgentPlanStatus.
+   */
+  async persistStepResult<T = unknown>(
+    planId: string,
+    organizationId: string,
+    result: {
+      stepId: string;
+      status: 'running' | 'done' | 'failed';
+      summary: string;
+      citationIds?: string[];
+      auditId?: string;
+    },
+  ): Promise<T> {
+    return this.patch<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}/step-result`,
+      result,
+      { params: { organizationId } },
+    );
+  }
+
+  /**
+   * v2 chat refactor: persist the final composed answer onto the plan's
+   * durable record. PATCH /internal/agent-plans/:planId/answer. Org-scoped
+   * via the ?organizationId query param. Does NOT change plan status (the
+   * compose_answer tool still owns the executing -> done transition).
+   */
+  async persistAnswer<T = unknown>(
+    planId: string,
+    organizationId: string,
+    payload: {
+      answer: string;
+      citationMap?: Record<string, unknown>;
+      removedClaims?: string[];
+    },
+  ): Promise<T> {
+    return this.patch<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}/answer`,
+      payload,
+      { params: { organizationId } },
     );
   }
 
