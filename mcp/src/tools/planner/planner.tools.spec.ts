@@ -45,6 +45,8 @@ interface GatewayMock {
   createAgentPlan: jest.Mock;
   updateAgentPlanStatus: jest.Mock;
   getAgentPlan: jest.Mock;
+  persistStepResult: jest.Mock;
+  persistAnswer: jest.Mock;
   post: jest.Mock;
 }
 
@@ -53,6 +55,8 @@ function makeGateway(): GatewayMock {
     createAgentPlan: jest.fn().mockResolvedValue({}),
     updateAgentPlanStatus: jest.fn().mockResolvedValue({}),
     getAgentPlan: jest.fn(),
+    persistStepResult: jest.fn().mockResolvedValue({}),
+    persistAnswer: jest.fn().mockResolvedValue({}),
     post: jest.fn().mockResolvedValue({}),
   };
 }
@@ -146,6 +150,8 @@ describe('PlannerTools', () => {
       }),
       ORG,
       AGENT.id,
+      // static mode (no authContext token) -> no runId correlation key
+      undefined,
     );
     expect(gateway.updateAgentPlanStatus).toHaveBeenCalledWith(
       planId,
@@ -202,6 +208,19 @@ describe('PlannerTools', () => {
         }),
       }),
     );
+    // durable step-result persisted with status 'done' and the recorded
+    // citation ids for this step (does not change plan status)
+    expect(gateway.persistStepResult).toHaveBeenCalledWith(
+      planId,
+      ORG,
+      expect.objectContaining({
+        stepId: 's1',
+        status: 'done',
+        summary: 'Found 2 communications between A and B about the Q3 wire',
+        citationIds: ['item-1', 'item-2#chunk-3'],
+        auditId: 'audit-41',
+      }),
+    );
 
     // -- compose a fully-grounded draft: executing -> done --
     gateway.getAgentPlan.mockResolvedValue(persistedPlan(planId, 'executing'));
@@ -237,6 +256,19 @@ describe('PlannerTools', () => {
         action: 'plan_completed',
         planId,
         resultHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
+    );
+    // durable answer persisted on the done path (status transition above
+    // remains the source of truth; this is additive)
+    expect(gateway.persistAnswer).toHaveBeenCalledWith(
+      planId,
+      ORG,
+      expect.objectContaining({
+        answer: payload.finalText,
+        citationMap: expect.objectContaining({
+          'item-1': expect.objectContaining({ itemId: 'item-1' }),
+        }),
+        removedClaims: [],
       }),
     );
     // registry cleaned up after completion
@@ -533,6 +565,77 @@ describe('PlannerTools', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // v2 chat refactor: durable run persistence (runId + step/answer writes)
+  // ---------------------------------------------------------------------------
+
+  describe('durable run persistence', () => {
+    it('passes runId=undefined in static mode (no authContext) without breaking', async () => {
+      // req carries only the static-pinned agent — no authContext token.
+      const planId = await submitValidPlan();
+      expect(gateway.createAgentPlan).toHaveBeenCalledWith(
+        expect.objectContaining({ planId }),
+        ORG,
+        AGENT.id,
+        undefined,
+      );
+    });
+
+    it('record_step_result persistence failure does not fail the tool', async () => {
+      gateway.getAgentPlan.mockResolvedValue(persistedPlan('p1', 'approved'));
+      gateway.persistStepResult.mockRejectedValue(new Error('boom'));
+
+      const result = await tools.recordStepResult(
+        {
+          planId: 'p1',
+          stepId: 's1',
+          summary: 'found item-1',
+          citations: [{ itemId: 'item-1' }],
+        },
+        ctx,
+        req,
+      );
+
+      // tool still succeeds: in-memory registry is authoritative for compose
+      expect(gateway.persistStepResult).toHaveBeenCalled();
+      expect(resultText(result)).toContain('recorded for plan p1');
+      expect(registry.get('p1')?.citations).toHaveLength(1);
+    });
+
+    it('compose_answer answer persistence failure does not fail the tool', async () => {
+      gateway.getAgentPlan.mockResolvedValue(persistedPlan('p2', 'approved'));
+      await tools.recordStepResult(
+        {
+          planId: 'p2',
+          stepId: 's1',
+          summary: 'found item-1',
+          citations: [{ itemId: 'item-1' }],
+        },
+        ctx,
+        req,
+      );
+      gateway.getAgentPlan.mockResolvedValue(persistedPlan('p2', 'executing'));
+      gateway.persistAnswer.mockRejectedValue(new Error('boom'));
+
+      const result = await tools.composeAnswer(
+        { planId: 'p2', draft: '[Alice emailed Bob](cite:item-1).' },
+        ctx,
+        req,
+      );
+
+      // status transition committed and answer returned despite persist failure
+      expect(gateway.updateAgentPlanStatus).toHaveBeenCalledWith(
+        'p2',
+        'done',
+        AGENT.id,
+      );
+      expect(gateway.persistAnswer).toHaveBeenCalled();
+      const payload = JSON.parse(resultText(result));
+      expect(payload.finalText).toContain('(cite:item-1)');
+      expect(registry.get('p2')).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // identity / allowlist enforcement
   // ---------------------------------------------------------------------------
 
@@ -653,10 +756,12 @@ describe('PlannerTools', () => {
         'case-1',
         token,
       );
+      // runId correlation key = the verified authContext jti
       expect(gateway.createAgentPlan).toHaveBeenCalledWith(
         expect.objectContaining({ planId, caseId: 'case-1' }),
         TOKEN_ORG,
         AGENT.id,
+        'jti-77',
       );
       expect(gateway.post).toHaveBeenCalledWith(
         'project',
