@@ -1,0 +1,41 @@
+name: Reusable PR Ticket Check
+
+# SOC 2 CC8.1 change management. Called by each repo's pr-ticket-check.yml on
+# pull_request -> dev. Asserts the PR references a GitHub Issue (ticket).
+# IMPORTANT: no `permissions:` block here - a permissions block in a
+# workflow_call workflow causes startup_failure for callers that don't set
+# their own permissions (known footgun). Callers set permissions instead.
+on:
+  workflow_call:
+
+jobs:
+  ticket-check:
+    name: Require ticket reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR for a GitHub Issue reference
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_USER: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [[ "$PR_USER" == *"[bot]" ]]; then
+            echo "Automation PR by $PR_USER - exempt (governed by standing config)."
+            exit 0
+          fi
+          TEXT="$PR_TITLE
+          $PR_BODY"
+          if echo "$TEXT" | grep -qiE '(clos(e|es|ed)|fix(es|ed)?|resolv(e|es|ed))[[:space:]]+#[0-9]+'; then
+            echo "PASS: linked-issue keyword reference found (Closes/Fixes/Resolves #N)."
+            exit 0
+          fi
+          if echo "$TEXT" | grep -qE '(^|[^[:alnum:]])#[0-9]+'; then
+            echo "PASS: issue reference (#N) found."
+            exit 0
+          fi
+          if echo "$TEXT" | grep -qiE 'github\.com/[^/]+/[^/]+/issues/[0-9]+'; then
+            echo "PASS: issue URL reference found."
+            exit 0
+          fi
+          echo "::error::No ticket reference found. Every PR into 'dev' must reference a GitHub Issue - add e.g. 'Closes #123' (preferred) or '#123' to the PR title or body. (Bots are exempt.)"
+          exit 1
