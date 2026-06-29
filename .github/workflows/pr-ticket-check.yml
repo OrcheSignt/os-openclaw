@@ -2,14 +2,12 @@ name: PR Ticket Check
 
 on:
   pull_request:
-    branches: [dev]
+    branches: [dev, prod]
     types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: read
 
 jobs:
-  # This repo is public and cannot call the private devops repo's reusable
-  # workflow, so it references a LOCAL copy via ./ (same check context name).
   ticket-check:
     uses: ./.github/workflows/_reusable-pr-ticket-check.yml
