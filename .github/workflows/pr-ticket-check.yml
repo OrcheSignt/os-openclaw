@@ -9,5 +9,7 @@ permissions:
   contents: read
 
 jobs:
+  # This repo is public and cannot call the private devops repo's reusable
+  # workflow, so it references a LOCAL copy via ./ (same check context name).
   ticket-check:
-    uses: OrcheSignt/orchsight-devops-cloud-platform/.github/workflows/_reusable-pr-ticket-check.yml@main
+    uses: ./.github/workflows/_reusable-pr-ticket-check.yml
