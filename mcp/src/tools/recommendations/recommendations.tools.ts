@@ -3,6 +3,13 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  requireOrganizationId,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class RecommendationsTools {
@@ -17,7 +24,6 @@ export class RecommendationsTools {
       'Creates or updates the recommendation for the given case and type.',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
-      organizationId: z.string().describe('The organization ID'),
       type: z
         .enum(['case_summary', 'legal_challenges', 'relevant_law'])
         .describe('Recommendation type'),
@@ -39,26 +45,32 @@ export class RecommendationsTools {
         .array(z.string())
         .optional()
         .describe('Evidence item IDs referenced in this recommendation'),
+      authContext: authContextParam,
     }),
   })
   async saveCaseRecommendation(
     params: {
       caseId: string;
-      organizationId: string;
       type: string;
       content: string;
       structured?: Record<string, any>;
       jurisdiction?: { country: string; state?: string };
       evidenceItemIds?: string[];
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'save_case_recommendation');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
+
     try {
       const result = await this.gateway.put<any>(
         'investigation',
         `/case-recommendations/${params.caseId}/${params.type}`,
         {
-          organizationId: params.organizationId,
+          organizationId,
           content: params.content,
           structured: params.structured,
           jurisdiction: params.jurisdiction,
@@ -102,15 +114,22 @@ export class RecommendationsTools {
         .string()
         .optional()
         .describe('Filter by case type (criminal, civil, cyber, fraud, compliance, internal)'),
+      authContext: authContextParam,
     }),
   })
   async getLegalReferences(
     params: {
       jurisdiction: string;
       case_type?: string;
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'get_legal_references');
+    requireOrganizationId(req, agent, params.authContext);
+
     try {
       const queryParams = new URLSearchParams({
         jurisdiction: params.jurisdiction,

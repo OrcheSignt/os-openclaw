@@ -3,6 +3,14 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  requireOrganizationId,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
+import { postAgentAudit } from '../shared/agent-audit.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class ManagementTools {
@@ -32,6 +40,7 @@ export class ManagementTools {
         .optional()
         .describe('URL to navigate to when clicked'),
       caseId: z.string().optional().describe('Related case ID'),
+      authContext: authContextParam,
     }),
   })
   async createNotification(
@@ -43,9 +52,15 @@ export class ManagementTools {
       priority: string;
       actionUrl?: string;
       caseId?: string;
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'create_notification');
+    requireOrganizationId(req, agent, params.authContext);
+
     const result = await this.gateway.post<any>(
       'project',
       '/notifications',
@@ -78,7 +93,6 @@ export class ManagementTools {
       'follow-up actions, or compliance checks to team members.',
     parameters: z.object({
       title: z.string().max(300).describe('Task title'),
-      organizationId: z.string().describe('Organization ID'),
       caseId: z.string().optional().describe('Related case ID'),
       assignedToList: z
         .array(z.string())
@@ -101,24 +115,30 @@ export class ManagementTools {
         .array(z.string())
         .optional()
         .describe('Tags for categorization'),
+      authContext: authContextParam,
     }),
   })
   async createTask(
     params: {
       title: string;
-      organizationId: string;
       caseId?: string;
       assignedToList?: string[];
       priority: string;
       dueDate?: string;
       description?: string;
       tags?: string[];
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'create_task');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
+
     const result = await this.gateway.post<any>('project', '/tasks', {
       title: params.title,
-      organizationId: params.organizationId,
+      organizationId,
       caseId: params.caseId,
       assignedToList: params.assignedToList,
       priority: params.priority,
@@ -141,7 +161,7 @@ export class ManagementTools {
   @Tool({
     name: 'update_task',
     description:
-      'Update an existing task — change status, progress, or add a comment. ' +
+      'Update an existing task -- change status, progress, or add a comment. ' +
       'Use to track work progress on review tasks.',
     parameters: z.object({
       taskId: z.string().describe('Task ID to update'),
@@ -160,6 +180,7 @@ export class ManagementTools {
         .max(2000)
         .optional()
         .describe('Comment to add to the task'),
+      authContext: authContextParam,
     }),
   })
   async updateTask(
@@ -168,9 +189,15 @@ export class ManagementTools {
       status?: string;
       progress?: number;
       comment?: string;
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'update_task');
+    requireOrganizationId(req, agent, params.authContext);
+
     const updates: string[] = [];
 
     if (params.status || params.progress !== undefined) {
@@ -183,9 +210,9 @@ export class ManagementTools {
         `/tasks/${params.taskId}`,
         patchData,
       );
-      if (params.status) updates.push(`status → ${params.status}`);
+      if (params.status) updates.push(`status -> ${params.status}`);
       if (params.progress !== undefined)
-        updates.push(`progress → ${params.progress}%`);
+        updates.push(`progress -> ${params.progress}%`);
     }
 
     if (params.comment) {
@@ -222,12 +249,18 @@ export class ManagementTools {
         .min(0)
         .max(100)
         .describe('Progress percentage (0-100)'),
+      authContext: authContextParam,
     }),
   })
   async updateCaseProgress(
-    params: { caseId: string; progress: number },
+    params: { caseId: string; progress: number; authContext?: string },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'update_case_progress');
+    requireOrganizationId(req, agent, params.authContext);
+
     await this.gateway.patch<any>(
       'project',
       `/cases/${params.caseId}/progress`,
@@ -278,6 +311,31 @@ export class ManagementTools {
         .max(2000)
         .optional()
         .describe('Additional details'),
+      // --- audit v2 (plan §8.3) — all optional, additive, so existing
+      // callers are unaffected ---
+      planId: z
+        .string()
+        .optional()
+        .describe('Agent plan id (plan DSL) this action belongs to'),
+      stepId: z
+        .string()
+        .optional()
+        .describe('Plan step id this action executed'),
+      provenance: z
+        .object({
+          itemIds: z.array(z.string()).optional(),
+          searchIds: z.array(z.string()).optional(),
+          auditIds: z.array(z.string()).optional(),
+        })
+        .optional()
+        .describe(
+          'Citation provenance: ids of the items/searches/audit records this action relied on',
+        ),
+      resultHash: z
+        .string()
+        .optional()
+        .describe('Hash of the action result, for tamper-evident audit'),
+      authContext: authContextParam,
     }),
   })
   async logAudit(
@@ -293,19 +351,41 @@ export class ManagementTools {
         retentionRequired?: boolean;
       };
       details?: string;
+      planId?: string;
+      stepId?: string;
+      provenance?: {
+        itemIds?: string[];
+        searchIds?: string[];
+        auditIds?: string[];
+      };
+      resultHash?: string;
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
-    await this.gateway.post<any>('project', '/audit-logs', {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'log_audit');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
+
+    // Payload construction (actor block, org scoping, audit-v2 linkage) is
+    // factored into postAgentAudit, shared with the planner tool family.
+    await postAgentAudit(this.gateway, agent, req, organizationId, {
       action: params.action,
       resourceType: params.resourceType,
       resourceId: params.resourceId,
-      severity: params.severity,
+      severity: params.severity as
+        | 'LOW'
+        | 'MEDIUM'
+        | 'HIGH'
+        | 'CRITICAL',
       category: params.category,
       compliance: params.compliance,
       details: params.details,
-      source: 'openclaw-agent',
-      timestamp: new Date().toISOString(),
+      planId: params.planId,
+      stepId: params.stepId,
+      provenance: params.provenance,
+      resultHash: params.resultHash,
     });
 
     return {

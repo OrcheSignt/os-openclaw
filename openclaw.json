@@ -5,7 +5,61 @@
     "port": 18789,
     "auth": {
       "mode": "token",
-      "token": "orchsight-openclaw-internal-2026"
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    }
+  },
+  "mcp": {
+    "servers": {
+      "orchesight-ediscovery": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_EDISCOVERY}"
+        },
+        "codex": {
+          "agents": ["ediscovery"]
+        }
+      },
+      "orchesight-privacy": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_PRIVACY}"
+        },
+        "codex": {
+          "agents": ["privacy"]
+        }
+      },
+      "orchesight-cyber": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_CYBER}"
+        },
+        "codex": {
+          "agents": ["cyber"]
+        }
+      },
+      "orchesight-compliance": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_COMPLIANCE}"
+        },
+        "codex": {
+          "agents": ["compliance"]
+        }
+      },
+      "orchesight-recommendations": {
+        "url": "http://os-openclaw-mcp-app/mcp",
+        "transport": "streamable-http",
+        "headers": {
+          "Authorization": "Bearer ${OPENCLAW_MCP_TOKEN_RECOMMENDATIONS}"
+        },
+        "codex": {
+          "agents": ["recommendations"]
+        }
+      }
     }
   },
   "agents": {
@@ -18,12 +72,17 @@
       {
         "id": "ediscovery",
         "workspace": "workspaces/ediscovery",
+        "model": {
+          "primary": "vllm/gpt_oss"
+        },
         "tools": {
           "profile": "full",
           "allow": [
             "search_evidence", "get_item_details", "tag_items", "bulk_tag",
             "aggregate_data", "analyze_text", "create_notification",
-            "create_task", "log_audit", "update_case_progress", "generate_report"
+            "create_task", "log_audit", "update_case_progress", "generate_report",
+            "submit_plan", "get_plan", "record_step_result", "compose_answer",
+            "abort_plan"
           ]
         }
       },
@@ -43,7 +102,12 @@
         "id": "cyber",
         "workspace": "workspaces/cyber",
         "tools": {
-          "profile": "full"
+          "profile": "full",
+          "allow": [
+            "search_evidence", "get_item_details", "aggregate_data",
+            "analyze_text", "create_notification", "create_task",
+            "log_audit", "update_case_progress", "generate_report"
+          ]
         }
       },
       {

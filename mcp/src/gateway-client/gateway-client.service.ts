@@ -17,6 +17,10 @@ export interface GatewayError {
   message: string;
 }
 
+/** Minimum JWT_SECRET length we accept. Below this, HS256 brute force is
+ *  realistic. Aligns with OWASP guidance for HMAC secrets. */
+const MIN_JWT_SECRET_LENGTH = 32;
+
 @Injectable()
 export class GatewayClientService {
   private readonly logger = new Logger(GatewayClientService.name);
@@ -33,7 +37,20 @@ export class GatewayClientService {
       'OS_API_GATEWAY_URL',
       'http://os-api-gateway-app/api/v1',
     );
-    this.jwtSecret = this.configService.get<string>('JWT_SECRET', '');
+
+    // Fail closed at module init if JWT_SECRET is missing or too short.
+    // Previously this silently defaulted to '' which produced trivially
+    // forgeable tokens (security review finding C5).
+    const secret = this.configService.get<string>('JWT_SECRET');
+    if (!secret || secret.length < MIN_JWT_SECRET_LENGTH) {
+      throw new Error(
+        `GatewayClientService: JWT_SECRET must be set and at least ` +
+          `${MIN_JWT_SECRET_LENGTH} characters long. ` +
+          `Refusing to sign service-to-service tokens with a weak key.`,
+      );
+    }
+    this.jwtSecret = secret;
+
     this.agentUserId = this.configService.get<string>('AGENT_USER_ID', '');
     this.agentUserEmail = this.configService.get<string>(
       'AGENT_USER_EMAIL',
@@ -89,7 +106,7 @@ export class GatewayClientService {
           'Unknown gateway error',
       };
       this.logger.error(
-        `Gateway error: ${gwError.service}${gwError.path} → ${gwError.status} ${gwError.message}`,
+        `Gateway error: ${gwError.service}${gwError.path} -> ${gwError.status} ${gwError.message}`,
       );
       throw new Error(
         `Gateway call failed (${gwError.service}${gwError.path}): ${gwError.status} ${gwError.message}`,
@@ -130,6 +147,121 @@ export class GatewayClientService {
     options?: GatewayRequestOptions,
   ): Promise<T> {
     return this.request<T>(service, 'PATCH', path, data, options);
+  }
+
+  // ---------------------------------------------------------------------------
+  // v2.0 foundation endpoints (os-investigation internal API)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * WS-2: fetch the assembled case context document in one round-trip.
+   * Backend contract: GET /internal/case-context/:caseId (WS-1).
+   * Callers (CaseContextService) own the org validation — this is transport only.
+   */
+  async getCaseContext<T = unknown>(caseId: string): Promise<T> {
+    return this.get<T>(
+      'investigation',
+      `/internal/case-context/${encodeURIComponent(caseId)}`,
+    );
+  }
+
+  /**
+   * WS-3: persist a validated agent plan to the `agent_plans` collection.
+   * POST /internal/agent-plans. Plans are case data: org- and agent-scoped.
+   * `organizationId` is the REQUEST org resolved by the caller via
+   * requireOrganizationId (deploy pin in static mode, verified authContext
+   * org in dynamic mode) — never agent state and never an LLM parameter.
+   *
+   * `runId` (v2 chat refactor): the correlation key between the triggering
+   * chat session and this plan — the verified authContext jti. Optional:
+   * static-mode deploys without a user-context token have no jti, so it is
+   * omitted from the body in that case.
+   */
+  async createAgentPlan<T = unknown>(
+    plan: Record<string, unknown>,
+    organizationId: string,
+    agentId: string,
+    runId?: string,
+  ): Promise<T> {
+    return this.post<T>('investigation', '/internal/agent-plans', {
+      ...plan,
+      organizationId,
+      agentId,
+      ...(runId ? { runId } : {}),
+    });
+  }
+
+  /**
+   * WS-3: append a status transition (draft -> approved -> executing ->
+   * done | aborted). PATCH /internal/agent-plans/:planId/status.
+   */
+  async updateAgentPlanStatus<T = unknown>(
+    planId: string,
+    status: string,
+    by: string,
+  ): Promise<T> {
+    return this.patch<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}/status`,
+      { status, by },
+    );
+  }
+
+  /** WS-3: fetch a persisted plan. GET /internal/agent-plans/:planId. */
+  async getAgentPlan<T = unknown>(planId: string): Promise<T> {
+    return this.get<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}`,
+    );
+  }
+
+  /**
+   * v2 chat refactor: persist a compact step result onto the plan's durable
+   * record so the run is renderable/reconstructable beyond the in-memory
+   * PlanExecutionRegistry. PATCH /internal/agent-plans/:planId/step-result.
+   * Org-scoped via the ?organizationId query param. Does NOT change plan
+   * status — status ownership stays with updateAgentPlanStatus.
+   */
+  async persistStepResult<T = unknown>(
+    planId: string,
+    organizationId: string,
+    result: {
+      stepId: string;
+      status: 'running' | 'done' | 'failed';
+      summary: string;
+      citationIds?: string[];
+      auditId?: string;
+    },
+  ): Promise<T> {
+    return this.patch<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}/step-result`,
+      result,
+      { params: { organizationId } },
+    );
+  }
+
+  /**
+   * v2 chat refactor: persist the final composed answer onto the plan's
+   * durable record. PATCH /internal/agent-plans/:planId/answer. Org-scoped
+   * via the ?organizationId query param. Does NOT change plan status (the
+   * compose_answer tool still owns the executing -> done transition).
+   */
+  async persistAnswer<T = unknown>(
+    planId: string,
+    organizationId: string,
+    payload: {
+      answer: string;
+      citationMap?: Record<string, unknown>;
+      removedClaims?: string[];
+    },
+  ): Promise<T> {
+    return this.patch<T>(
+      'investigation',
+      `/internal/agent-plans/${encodeURIComponent(planId)}/answer`,
+      payload,
+      { params: { organizationId } },
+    );
   }
 
   async checkHealth(): Promise<boolean> {

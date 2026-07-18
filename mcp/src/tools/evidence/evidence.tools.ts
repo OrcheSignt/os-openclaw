@@ -3,6 +3,13 @@ import { Tool } from '@rekog/mcp-nest';
 import type { Context } from '@rekog/mcp-nest';
 import { z } from 'zod';
 import { GatewayClientService } from '../../gateway-client/gateway-client.service.js';
+import {
+  assertAgentMayCall,
+  requireAgent,
+  requireOrganizationId,
+  type McpToolHttpRequest,
+} from '../../security/agent-context.js';
+import { authContextParam } from '../shared/auth-context-param.js';
 
 @Injectable()
 export class EvidenceTools {
@@ -42,6 +49,7 @@ export class EvidenceTools {
         .enum(['keyword', 'semantic', 'hybrid'])
         .default('hybrid')
         .describe('Search mode'),
+      authContext: authContextParam,
     }),
   })
   async searchEvidence(
@@ -52,9 +60,15 @@ export class EvidenceTools {
       size: number;
       sort: string;
       searchMode: string;
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'search_evidence');
+    requireOrganizationId(req, agent, params.authContext);
+
     const size = Math.min(params.size || 10, 50);
 
     const filters: any[] = [
@@ -112,7 +126,6 @@ export class EvidenceTools {
       'Tags are used for classification (e.g. "eDiscovery/Privileged", "Privacy/PII-High").',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
-      organizationId: z.string().describe('The organization ID'),
       tagName: z.string().describe('Tag name (e.g. "eDiscovery/Privileged")'),
       tagColor: z
         .string()
@@ -123,21 +136,27 @@ export class EvidenceTools {
         .min(1)
         .max(500)
         .describe('Item IDs to tag'),
+      authContext: authContextParam,
     }),
   })
   async tagItems(
     params: {
       caseId: string;
-      organizationId: string;
       tagName: string;
       tagColor?: string;
       itemIds: string[];
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'tag_items');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
+
     const result = await this.gateway.post<any>('investigation', '/tags/apply', {
       caseId: params.caseId,
-      organizationId: params.organizationId,
+      organizationId,
       tagName: params.tagName,
       tagColor: params.tagColor || '#3B82F6',
       itemIds: params.itemIds,
@@ -160,31 +179,36 @@ export class EvidenceTools {
       'Uses server-side search-and-tag to handle pagination automatically.',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
-      organizationId: z.string().describe('The organization ID'),
       searchTerm: z.string().describe('Search query to match items'),
       searchMethod: z
         .enum(['keyword', 'semantic', 'hybrid'])
         .default('hybrid')
         .describe('Search method'),
       tagName: z.string().describe('Tag name to apply'),
+      authContext: authContextParam,
     }),
   })
   async bulkTag(
     params: {
       caseId: string;
-      organizationId: string;
       searchTerm: string;
       searchMethod: string;
       tagName: string;
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'bulk_tag');
+    const organizationId = requireOrganizationId(req, agent, params.authContext);
+
     const result = await this.gateway.post<any>(
       'investigation',
       '/tags/search-and-tag',
       {
         caseId: params.caseId,
-        organizationId: params.organizationId,
+        organizationId,
         searchTerm: params.searchTerm,
         searchMethod: params.searchMethod,
         tagName: params.tagName,
@@ -213,12 +237,18 @@ export class EvidenceTools {
         .min(1)
         .max(50)
         .describe('Item IDs to retrieve (max 50)'),
+      authContext: authContextParam,
     }),
   })
   async getItemDetails(
-    params: { caseId: string; itemIds: string[] },
+    params: { caseId: string; itemIds: string[]; authContext?: string },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'get_item_details');
+    requireOrganizationId(req, agent, params.authContext);
+
     const itemIds = params.itemIds.slice(0, 50);
 
     const request = {
@@ -255,7 +285,7 @@ export class EvidenceTools {
   @Tool({
     name: 'aggregate_data',
     description:
-      'Run aggregations on evidence data — terms (top values), date_histogram (timeline), or stats (min/max/avg). ' +
+      'Run aggregations on evidence data -- terms (top values), date_histogram (timeline), or stats (min/max/avg). ' +
       'Useful for case overview, distribution analysis, and trend detection.',
     parameters: z.object({
       caseId: z.string().describe('The case ID'),
@@ -275,6 +305,7 @@ export class EvidenceTools {
         .max(50)
         .default(10)
         .describe('Max buckets for terms aggregation'),
+      authContext: authContextParam,
     }),
   })
   async aggregateData(
@@ -284,9 +315,15 @@ export class EvidenceTools {
       field: string;
       interval?: string;
       size: number;
+      authContext?: string;
     },
     context: Context,
+    req?: McpToolHttpRequest,
   ) {
+    const agent = requireAgent(req);
+    assertAgentMayCall(agent, 'aggregate_data');
+    requireOrganizationId(req, agent, params.authContext);
+
     const agg: any = {
       name: 'result',
       type: params.aggType,
