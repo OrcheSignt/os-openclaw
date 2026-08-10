@@ -1,4 +1,10 @@
 {
+  "update": {
+    "checkOnStart": false,
+    "auto": {
+      "enabled": false
+    }
+  },
   "gateway": {
     "bind": "0.0.0.0",
     "port": 18789
